@@ -24,6 +24,8 @@ def process_sitrep(content):
         4. LAST SUMMARY RESPONSE
         5. CLIENT QUERY
 
+        For the CLIENT QUERY, look for the most recent response or comment from the client within the LAST SUMMARY RESPONSE. This is typically the last entry in that section and represents the client's latest input or question.
+
         Also, determine if the CLIENT QUERY is a general inquiry or requires specific analysis.
 
         Content:
@@ -34,7 +36,7 @@ def process_sitrep(content):
 
         For is_general_inquiry, use true if it's a general query about best practices, recommendations, or mitigation strategies, and false if it requires specific log analysis or technical details.
 
-        If there's no clear client query, set client_query to null and is_general_inquiry to false.
+        If there's no clear client query, extract the most recent comment or response as the client_query.
 
         Ensure your entire response is a valid JSON object.
         """
@@ -42,7 +44,7 @@ def process_sitrep(content):
         extraction_response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI assistant that extracts structured information from text and outputs it as valid JSON."},
+                {"role": "system", "content": "You are an AI assistant that extracts structured information from text and outputs it as valid JSON. Pay special attention to identifying the most recent client query or comment."},
                 {"role": "user", "content": extraction_prompt}
             ]
         )
@@ -71,7 +73,9 @@ def process_sitrep(content):
         Last Response: {extracted_info['last_response']}
         Client Query: {extracted_info['client_query']}
 
-        {'Provide a specific response addressing the client\'s query. Focus on relevant mitigation strategies, best practices, and recommendations related to the SITREP title.' if extracted_info['is_general_inquiry'] else 'This SITREP requires review. Explain that a Cybersecurity Analyst will review the anomalous internet traffic sessions and respond shortly with detailed analysis and recommendations.'}
+        Provide a specific response addressing the client's query or latest comment. If the query is about ignoring certain IPs for phishing alerts, confirm that the specified IPs will be excluded from future alerts and explain the process for updating the alert system.
+
+        If there's no specific query, provide a summary of the situation and next steps based on the SITREP title and last response.
 
         Ensure the response is tailored to the SITREP content and avoid generic advice.
         """
