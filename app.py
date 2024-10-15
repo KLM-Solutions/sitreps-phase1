@@ -2,6 +2,7 @@ import streamlit as st
 import openai
 import os
 import re
+from datetime import datetime, timedelta
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -15,28 +16,36 @@ def extract_query_and_name(content):
         return query, name
     return None, None
 
-def generate_response(query, sitrep_title, name=None):
+def generate_response(query, sitrep_title, name):
+    current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
+    response_time = current_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
     prompt = f"""
     Based on the following sitrep information:
     SITREP TITLE: {sitrep_title}
     QUERY: {query}
 
-    Generate a detailed, specific response addressing the query. The response should:
-    1. Directly address the specific concerns raised in the query
-    2. Provide detailed information about the alert mentioned in the SITREP TITLE
-    3. Explain actionable steps tailored to this specific situation
-    4. Discuss relevant thresholds or metrics specific to this case
-    5. Offer recommendations that are directly applicable to the queried scenario
+    Generate a detailed response following this structure:
+    1. Address the person by name (if provided) and thank them for their inquiry.
+    2. Provide specific information about the alert mentioned in the SITREP TITLE.
+    3. Explain the implications of the observed behavior.
+    4. Suggest actionable steps for investigation or resolution.
+    5. If applicable, provide information about thresholds or statistics related to the issue.
+    6. Offer guidance on interpreting the information.
+    7. Ask for any necessary confirmations or further information.
+    8. Provide a brief closing statement.
 
-    Do not include any greetings, closings, signatures, or timestamps. 
-    Focus solely on providing a comprehensive, tailored answer to the query.
-    Avoid generic advice and ensure all information is specific to this sitrep and query.
+    Use the following format:
+    {name}, {response_time}
+    [Detailed response following the structure above]
+
+    Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive, highly specific, and tailored to each unique situation."},
+            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided."},
             {"role": "user", "content": prompt}
         ]
     )
