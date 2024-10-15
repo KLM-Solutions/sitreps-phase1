@@ -1,7 +1,7 @@
 import streamlit as st
 import openai
 import os
-import re
+import json
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -17,18 +17,22 @@ def extract_sitrep_info(content):
     Content:
     {content}
 
-    Provide the output as a Python dictionary.
+    Provide the output as a JSON object with keys: "SITREP TITLE", "SITREP STATUS", "ORGANIZATION", "LAST SUMMARY RESPONSE".
     """
 
     extraction_response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "Extract key information from the sitrep content."},
+            {"role": "system", "content": "Extract key information from the sitrep content and output as JSON."},
             {"role": "user", "content": extraction_prompt}
         ]
     )
     
-    return eval(extraction_response.choices[0].message['content'])
+    try:
+        return json.loads(extraction_response.choices[0].message['content'])
+    except json.JSONDecodeError:
+        st.error("Failed to parse the extracted information. Please try again.")
+        return None
 
 def generate_detailed_response(sitrep_info):
     response_prompt = f"""
@@ -67,8 +71,11 @@ def generate_detailed_response(sitrep_info):
 def process_sitrep(content):
     try:
         sitrep_info = extract_sitrep_info(content)
-        response = generate_detailed_response(sitrep_info)
-        return sitrep_info, response
+        if sitrep_info:
+            response = generate_detailed_response(sitrep_info)
+            return sitrep_info, response
+        else:
+            return None, "Failed to extract sitrep information."
     except Exception as e:
         return None, f"An error occurred: {str(e)}"
 
