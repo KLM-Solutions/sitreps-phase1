@@ -44,24 +44,17 @@ def generate_response(query):
         return "This query requires specific analysis. A Cybersecurity Analyst will review and respond shortly."
 
     response_prompt = f"""
-    Provide a concise response to the following cybersecurity query:
+    Provide a concise 2-3 line response to the following cybersecurity question:
     "{query}"
 
-    Focus on one or more of the following aspects, as relevant to the query:
-    1. Mitigation strategies for potential security threats
-    2. Best practices for securing a network
-    3. General recommendations for improving cybersecurity hygiene
-    4. Steps to prevent the issue from occurring again
-
-    Base your response on industry-standard guidelines and practices. 
+    Focus on providing practical, general advice based on industry-standard guidelines and best practices. 
     Do not include any customer-specific information or recommendations that would require analysis of specific logs or systems.
-    Limit your response to 2-3 sentences.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity assistant providing general advice based on industry standards. Avoid customer-specific details."},
+            {"role": "system", "content": "You are a cybersecurity assistant providing brief, focused responses based on industry standards. Limit your response to 2-3 lines."},
             {"role": "user", "content": response_prompt}
         ]
     )
