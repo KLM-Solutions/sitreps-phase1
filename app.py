@@ -1,9 +1,12 @@
 import streamlit as st
 import openai
 import re
+import os
 
-# Set your OpenAI API key
-openai.api_key = "your-api-key-here"
+# Function to set OpenAI API key
+def set_openai_api_key(api_key):
+    openai.api_key = api_key
+    os.environ["OPENAI_API_KEY"] = api_key
 
 def extract_sitrep_info(content):
     sitrep_title = re.search(r"SITREP TITLE: (.+)", content)
@@ -19,22 +22,36 @@ def extract_sitrep_info(content):
     }
 
 def generate_response(prompt):
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": """You are an AI assistant for a cybersecurity company. Your task is to provide general responses to customer inquiries about cybersecurity best practices, recommendations, and mitigation strategies. Focus on industry-standard guidelines and avoid customer-specific details. If a query requires specific log analysis or technical details, suggest that a Cybersecurity Analyst should review it."""},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    return response.choices[0].message['content']
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": """You are an AI assistant for a cybersecurity company. Your task is to provide general responses to customer inquiries about cybersecurity best practices, recommendations, and mitigation strategies. Focus on industry-standard guidelines and avoid customer-specific details. If a query requires specific log analysis or technical details, suggest that a Cybersecurity Analyst should review it."""},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message['content']
+    except openai.error.AuthenticationError:
+        return "Error: Invalid API key. Please check your OpenAI API key and try again."
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
 def main():
     st.title("Sitrep Processor")
     
+    # API key input
+    api_key = st.text_input("Enter your OpenAI API key:", type="password")
+    if api_key:
+        set_openai_api_key(api_key)
+    
     content = st.text_area("Paste the Slack message content here:", height=200)
     
     if st.button("Process Sitrep"):
-        if content:
+        if not api_key:
+            st.error("Please enter your OpenAI API key.")
+        elif not content:
+            st.error("Please paste the Slack message content before processing.")
+        else:
             sitrep_info = extract_sitrep_info(content)
             
             st.subheader("Extracted Information")
@@ -57,8 +74,6 @@ def main():
             
             st.subheader("Generated Response")
             st.write(response)
-        else:
-            st.error("Please paste the Slack message content before processing.")
 
 if __name__ == "__main__":
     main()
