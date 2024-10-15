@@ -35,24 +35,17 @@ def generate_response(query, sitrep_title, name):
     7. Ask for any necessary confirmations or further information.
     8. Provide a brief closing statement.
 
-    Example Response:
-
+    Use the following format:
     {name}, {response_time}
+    [Detailed response following the structure above]
 
-    Hi {name}, Thank you for reaching out regarding the alert for {sitrep_title}.
-    Here's more information on this alert: [Specific Details]
-
-    Actionable steps: [Recommendations]
-
-    Threshold information: [Threshold data and statistics]
-
-    Please let us know if the observed activity is expected, or if further investigation is needed.
+    Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation."},
+            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided."},
             {"role": "user", "content": prompt}
         ]
     )
