@@ -2,9 +2,23 @@ import streamlit as st
 import openai
 import os
 import json
+import re
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def clean_and_parse_json(content):
+    # Remove any potential markdown code block syntax
+    content = re.sub(r'```json\s*|\s*```', '', content)
+    # Remove any leading/trailing whitespace
+    content = content.strip()
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as e:
+        st.error(f"JSON Decode Error: {str(e)}")
+        st.text("Raw content received:")
+        st.code(content)
+        return None
 
 def extract_sitrep_info(content):
     extraction_prompt = f"""
@@ -18,21 +32,19 @@ def extract_sitrep_info(content):
     {content}
 
     Provide the output as a JSON object with keys: "SITREP TITLE", "SITREP STATUS", "ORGANIZATION", "LAST SUMMARY RESPONSE".
+    Ensure the output is a valid JSON object.
     """
 
     extraction_response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "Extract key information from the sitrep content and output as JSON."},
+            {"role": "system", "content": "Extract key information from the sitrep content and output as valid JSON."},
             {"role": "user", "content": extraction_prompt}
         ]
     )
     
-    try:
-        return json.loads(extraction_response.choices[0].message['content'])
-    except json.JSONDecodeError:
-        st.error("Failed to parse the extracted information. Please try again.")
-        return None
+    extracted_content = extraction_response.choices[0].message['content']
+    return clean_and_parse_json(extracted_content)
 
 def generate_detailed_response(sitrep_info):
     response_prompt = f"""
@@ -75,9 +87,10 @@ def process_sitrep(content):
             response = generate_detailed_response(sitrep_info)
             return sitrep_info, response
         else:
-            return None, "Failed to extract sitrep information."
+            return None, "Failed to extract sitrep information. Please check the error message above."
     except Exception as e:
-        return None, f"An error occurred: {str(e)}"
+        st.error(f"An error occurred: {str(e)}")
+        return None, "An unexpected error occurred. Please try again."
 
 def main():
     st.title("Sitrep Processor with Detailed Responses")
