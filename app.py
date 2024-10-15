@@ -7,11 +7,8 @@ import re
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def extract_query(content):
-    # Extract the last summary response
     match = re.search(r'LAST SUMMARY RESPONSE:(.*?)$', content, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return None
+    return match.group(1).strip() if match else None
 
 def generate_response(query, sitrep_title):
     prompt = f"""
@@ -19,14 +16,15 @@ def generate_response(query, sitrep_title):
     SITREP TITLE: {sitrep_title}
     QUERY: {query}
 
-    Generate a detailed response in the following format:
+    Generate a detailed response addressing the query. The response should:
+    1. Start with a greeting addressing the person who asked the query
+    2. Provide information about the alert mentioned in the SITREP TITLE
+    3. Explain actionable steps
+    4. Discuss relevant thresholds
+    5. Offer recommendations
+    6. End with a closing statement
 
-    [Timestamp of the query in GMT]
-    [Query content]
-    [Timestamp for the response in GMT (current time)]
-    [Detailed response addressing the query, providing information about the alert, actionable steps, thresholds, and recommendations. The response should be similar in style and depth to the example provided earlier.]
-
-    Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
+    Do not include any timestamps or repeat the query in your response.
     """
 
     response = openai.ChatCompletion.create(
@@ -47,11 +45,11 @@ def process_sitrep(content):
         query = extract_query(content)
         if query:
             response = generate_response(query, sitrep_title)
-            return query, response
+            return response
         else:
-            return None, "Failed to extract query from the sitrep content."
+            return "Failed to extract query from the sitrep content."
     except Exception as e:
-        return None, f"An error occurred: {str(e)}"
+        return f"An error occurred: {str(e)}"
 
 def main():
     st.title("Sitrep Processor")
@@ -66,13 +64,9 @@ def main():
         if not content:
             st.error("Please provide the Sitrep content.")
         else:
-            query, response = process_sitrep(content)
-            
-            if query:
-                st.subheader("Extracted Query and Generated Response")
-                st.text(response)
-            else:
-                st.error(response)
+            response = process_sitrep(content)
+            st.markdown("### Generated Response")
+            st.markdown(response)
 
 if __name__ == "__main__":
     main()
