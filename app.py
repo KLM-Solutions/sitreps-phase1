@@ -1,71 +1,30 @@
 import streamlit as st
 import openai
 import os
-import json
 import re
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def clean_and_parse_json(content):
-    # Remove any potential markdown code block syntax
-    content = re.sub(r'```json\s*|\s*```', '', content)
-    # Remove any leading/trailing whitespace
-    content = content.strip()
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError as e:
-        st.error(f"JSON Decode Error: {str(e)}")
-        st.text("Raw content received:")
-        st.code(content)
-        return None
+def extract_query(content):
+    # Extract the last summary response
+    match = re.search(r'LAST SUMMARY RESPONSE:(.*?)$', content, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return None
 
-def extract_sitrep_info(content):
-    extraction_prompt = f"""
-    Analyze the following sitrep content and extract:
-    1. SITREP TITLE
-    2. SITREP STATUS
-    3. ORGANIZATION
-    4. LAST SUMMARY RESPONSE (including timestamp, name, and message)
+def generate_response(query, sitrep_title):
+    prompt = f"""
+    Based on the following sitrep information:
+    SITREP TITLE: {sitrep_title}
+    QUERY: {query}
 
-    Content:
-    {content}
+    Generate a detailed response in the following format:
 
-    Provide the output as a JSON object with keys: "SITREP TITLE", "SITREP STATUS", "ORGANIZATION", "LAST SUMMARY RESPONSE".
-    Ensure the output is a valid JSON object.
-    """
-
-    extraction_response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Extract key information from the sitrep content and output as valid JSON."},
-            {"role": "user", "content": extraction_prompt}
-        ]
-    )
-    
-    extracted_content = extraction_response.choices[0].message['content']
-    return clean_and_parse_json(extracted_content)
-
-def generate_detailed_response(sitrep_info):
-    response_prompt = f"""
-    Based on the following sitrep information, generate a detailed response:
-
-    SITREP TITLE: {sitrep_info['SITREP TITLE']}
-    ORGANIZATION: {sitrep_info['ORGANIZATION']}
-    LAST SUMMARY RESPONSE: {sitrep_info['LAST SUMMARY RESPONSE']}
-
-    Your response should:
-    1. Address the specific query or concern in the LAST SUMMARY RESPONSE
-    2. Provide detailed information about the alert or issue mentioned in the SITREP TITLE
-    3. Explain the implications of the observed behavior
-    4. Suggest actionable steps for investigation or resolution
-    5. Include relevant thresholds or statistics if applicable
-    6. Offer guidance on how to interpret the information
-    7. Ask for confirmation or further information if needed
-
-    Format the response as follows:
-    [Timestamp in GMT]
-    [Full response here, maintaining a conversational yet informative tone]
+    [Timestamp of the query in GMT]
+    [Query content]
+    [Timestamp for the response in GMT (current time)]
+    [Detailed response addressing the query, providing information about the alert, actionable steps, thresholds, and recommendations. The response should be similar in style and depth to the example provided earlier.]
 
     Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
     """
@@ -74,7 +33,7 @@ def generate_detailed_response(sitrep_info):
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation."},
-            {"role": "user", "content": response_prompt}
+            {"role": "user", "content": prompt}
         ]
     )
 
@@ -82,18 +41,20 @@ def generate_detailed_response(sitrep_info):
 
 def process_sitrep(content):
     try:
-        sitrep_info = extract_sitrep_info(content)
-        if sitrep_info:
-            response = generate_detailed_response(sitrep_info)
-            return sitrep_info, response
+        sitrep_title_match = re.search(r'SITREP TITLE:(.*?)$', content, re.MULTILINE)
+        sitrep_title = sitrep_title_match.group(1).strip() if sitrep_title_match else "Unknown Title"
+        
+        query = extract_query(content)
+        if query:
+            response = generate_response(query, sitrep_title)
+            return query, response
         else:
-            return None, "Failed to extract sitrep information. Please check the error message above."
+            return None, "Failed to extract query from the sitrep content."
     except Exception as e:
-        st.error(f"An error occurred: {str(e)}")
-        return None, "An unexpected error occurred. Please try again."
+        return None, f"An error occurred: {str(e)}"
 
 def main():
-    st.title("Sitrep Processor with Detailed Responses")
+    st.title("Sitrep Processor")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
@@ -105,14 +66,13 @@ def main():
         if not content:
             st.error("Please provide the Sitrep content.")
         else:
-            sitrep_info, response = process_sitrep(content)
+            query, response = process_sitrep(content)
             
-            if sitrep_info:
-                st.subheader("Extracted Sitrep Information")
-                st.json(sitrep_info)
-            
-            st.subheader("Generated Detailed Response")
-            st.markdown(response)
+            if query:
+                st.subheader("Extracted Query and Generated Response")
+                st.text(response)
+            else:
+                st.error(response)
 
 if __name__ == "__main__":
     main()
