@@ -3,10 +3,8 @@ import openai
 import re
 import os
 
-# Function to set OpenAI API key
-def set_openai_api_key(api_key):
-    openai.api_key = api_key
-    os.environ["OPENAI_API_KEY"] = api_key
+# Set OpenAI API key from environment variable
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def extract_sitrep_info(content):
     sitrep_title = re.search(r"SITREP TITLE: (.+)", content)
@@ -32,24 +30,21 @@ def generate_response(prompt):
         )
         return response.choices[0].message['content']
     except openai.error.AuthenticationError:
-        return "Error: Invalid API key. Please check your OpenAI API key and try again."
+        return "Error: Invalid API key. Please check your OPENAI_API_KEY environment variable."
     except Exception as e:
         return f"An error occurred: {str(e)}"
 
 def main():
     st.title("Sitrep Processor")
     
-    # API key input
-    api_key = st.text_input("Enter your OpenAI API key:", type="password")
-    if api_key:
-        set_openai_api_key(api_key)
+    if not openai.api_key:
+        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+        return
     
     content = st.text_area("Paste the Slack message content here:", height=200)
     
     if st.button("Process Sitrep"):
-        if not api_key:
-            st.error("Please enter your OpenAI API key.")
-        elif not content:
+        if not content:
             st.error("Please paste the Slack message content before processing.")
         else:
             sitrep_info = extract_sitrep_info(content)
