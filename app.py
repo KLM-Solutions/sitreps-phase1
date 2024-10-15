@@ -2,6 +2,7 @@ import streamlit as st
 import openai
 import os
 import json
+import re
 from datetime import datetime, timedelta
 
 # Set OpenAI API key from environment variable
@@ -32,7 +33,7 @@ def extract_query(content):
         extracted_info = json.loads(extraction_response.choices[0].message['content'])
         return extracted_info['query'], extracted_info['name']
     except json.JSONDecodeError:
-        return None, None
+        return "What are the key concerns in this sitrep?", None
 
 def generate_response(query, sitrep_title, name):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
@@ -53,7 +54,7 @@ def generate_response(query, sitrep_title, name):
     7. Ask for any necessary confirmations or further information.
 
     Use the following format:
-    {name}, {response_time}
+    {name if name else "Analyst"}, {response_time}
     [Detailed response following the structure above]
 
     Do not include any closing remarks, "Best regards," signatures, or cybersecurity team mentions at the end.
@@ -72,15 +73,18 @@ def generate_response(query, sitrep_title, name):
 
 def process_sitrep(content):
     try:
-        sitrep_title_match = content.split("SITREP TITLE:")[1].split("\n")[0].strip()
+        sitrep_title_match = re.search(r'SITREP TITLE:(.*?)$', content, re.MULTILINE)
+        sitrep_title = sitrep_title_match.group(1).strip() if sitrep_title_match else "Unknown Title"
+        
         query, name = extract_query(content)
         if query:
-            response = generate_response(query, sitrep_title_match, name)
+            response = generate_response(query, sitrep_title, name)
             return query, response
         else:
-            return None, "Failed to extract a relevant query from the sitrep content."
+            return "No specific query identified. Analyzing overall sitrep content.", generate_response("Provide an analysis of this sitrep", sitrep_title, "Analyst")
     except Exception as e:
-        return None, f"An error occurred: {str(e)}"
+        st.error(f"An error occurred: {str(e)}")
+        return "Error in processing", "Unable to generate a response due to an error. Please check the sitrep content and try again."
 
 def main():
     st.title("Sitrep Processor")
@@ -96,13 +100,10 @@ def main():
             st.error("Please provide the Sitrep content.")
         else:
             query, response = process_sitrep(content)
-            if query:
-                st.subheader("Identified User Query")
-                st.markdown(query)
-                st.subheader("Generated Response")
-                st.markdown(response)
-            else:
-                st.error(response)
+            st.subheader("Identified Query or Context")
+            st.markdown(query)
+            st.subheader("Generated Response")
+            st.markdown(response)
 
 if __name__ == "__main__":
     main()
