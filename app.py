@@ -2,9 +2,16 @@ import streamlit as st
 import openai
 import os
 import json
+import re
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def clean_json_string(json_string):
+    # Remove ```json and ``` if present
+    json_string = re.sub(r'^```json\n|```$', '', json_string, flags=re.MULTILINE)
+    # Remove any leading/trailing whitespace
+    return json_string.strip()
 
 def process_sitrep(content):
     try:
@@ -27,6 +34,8 @@ def process_sitrep(content):
 
         For is_general_inquiry, use true if it's a general query about best practices, recommendations, or mitigation strategies, and false if it requires specific log analysis or technical details.
 
+        If there's no clear client query, set client_query to null and is_general_inquiry to false.
+
         Ensure your entire response is a valid JSON object.
         """
 
@@ -42,14 +51,16 @@ def process_sitrep(content):
         st.text("Raw LLM extraction output:")
         st.code(extraction_content, language="json")
         
+        # Clean the JSON string
+        cleaned_json = clean_json_string(extraction_content)
+        st.text("Cleaned JSON:")
+        st.code(cleaned_json, language="json")
+
         try:
-            extracted_info = json.loads(extraction_content)
+            extracted_info = json.loads(cleaned_json)
         except json.JSONDecodeError as e:
             st.error(f"JSON Decode Error: {str(e)}")
-            st.text("Attempting to fix JSON...")
-            # Attempt to fix common JSON issues
-            fixed_content = extraction_content.replace("'", '"').replace("\n", "")
-            extracted_info = json.loads(fixed_content)
+            return None, "Error: Unable to parse JSON response from LLM."
 
         # Second LLM call to generate response
         response_prompt = f"""
@@ -60,7 +71,7 @@ def process_sitrep(content):
         Last Response: {extracted_info['last_response']}
         Client Query: {extracted_info['client_query']}
 
-        {"Provide a specific response addressing the client's query. Focus on relevant mitigation strategies, best practices, and recommendations related to the SITREP title. If the query is about NTP (Network Time Protocol), provide specific best practices for NTP security." if extracted_info['is_general_inquiry'] else "This query requires specific analysis. Explain that a Cybersecurity Analyst will review and respond shortly."}
+        {'Provide a specific response addressing the client\'s query. Focus on relevant mitigation strategies, best practices, and recommendations related to the SITREP title.' if extracted_info['is_general_inquiry'] else 'This SITREP requires review. Explain that a Cybersecurity Analyst will review the anomalous internet traffic sessions and respond shortly with detailed analysis and recommendations.'}
 
         Ensure the response is tailored to the SITREP content and avoid generic advice.
         """
