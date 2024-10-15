@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def extract_query(content):
-    # First, try to extract the query directly from LAST SUMMARY RESPONSE
+    sitrep_title_match = re.search(r'SITREP TITLE:(.*?)$', content, re.MULTILINE)
+    sitrep_title = sitrep_title_match.group(1).strip() if sitrep_title_match else "Unknown Title"
+
     last_summary_match = re.search(r'LAST SUMMARY RESPONSE:(.*?)$', content, re.DOTALL)
     if last_summary_match:
         last_summary = last_summary_match.group(1).strip()
@@ -17,34 +19,15 @@ def extract_query(content):
         if name_query_match:
             name = name_query_match.group(1).strip()
             query = name_query_match.group(3).strip()
+            
+            # Check if the query is asking for a review
+            if re.search(r'please review|review it again', query, re.IGNORECASE):
+                return f"Please provide an analysis of the issue: {sitrep_title}", name
+            
             return query, name
 
-    # If direct extraction fails, use LLM to infer the query
-    extraction_prompt = f"""
-    Analyze the following sitrep content and extract:
-    1. The most relevant user query or request
-    2. The name of the person making the query (if available)
-
-    Content:
-    {content}
-
-    Provide the output as a JSON object with keys: "query" and "name".
-    If there's no clear query, infer one based on the context of the sitrep.
-    """
-
-    extraction_response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are an AI assistant tasked with extracting the most relevant user query from sitrep content."},
-            {"role": "user", "content": extraction_prompt}
-        ]
-    )
-    
-    try:
-        extracted_info = json.loads(extraction_response.choices[0].message['content'])
-        return extracted_info['query'], extracted_info['name']
-    except json.JSONDecodeError:
-        return "What are the key concerns in this sitrep?", None
+    # If no query is found or it doesn't match the review condition, use the title
+    return f"Please provide an analysis of the issue: {sitrep_title}", None
 
 def generate_response(query, sitrep_title, name):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
@@ -92,7 +75,7 @@ def process_sitrep(content):
             response = generate_response(query, sitrep_title, name)
             return query, response
         else:
-            return "No specific query identified. Analyzing overall sitrep content.", generate_response("Provide an analysis of this sitrep", sitrep_title, "Analyst")
+            return "No specific query identified. Analyzing overall sitrep content.", generate_response(f"Please provide an analysis of the issue: {sitrep_title}", sitrep_title, "Analyst")
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
         return "Error in processing", "Unable to generate a response due to an error. Please check the sitrep content and try again."
