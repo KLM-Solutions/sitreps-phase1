@@ -20,6 +20,7 @@ def generate_response(query, sitrep_title, name):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
     response_time = current_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
+    # Modified prompt to be more specific and concise based on Anthony's inquiry
     prompt = f"""
     Based on the following sitrep information:
     SITREP TITLE: {sitrep_title}
@@ -27,25 +28,21 @@ def generate_response(query, sitrep_title, name):
 
     Generate a detailed response following this structure:
     1. Address the person by name (if provided) and thank them for their inquiry.
-    2. Provide specific information about the alert mentioned in the SITREP TITLE.
-    3. Explain the implications of the observed behavior.
-    4. Suggest actionable steps for investigation or resolution.
-    5. If applicable, provide information about thresholds or statistics related to the issue.
-    6. Offer guidance on interpreting the information.
-    7. Ask for any necessary confirmations or further information.
+    2. Provide specific information related to the file names or hash inquiry.
+    3. Suggest next steps for investigating the files further.
+    4. Avoid over-explaining common system files unless it is directly related to the issue.
 
     Use the following format:
     {name}, {response_time}
     [Detailed response following the structure above]
 
-    Do not include any closing remarks, "Best regards," signatures, or cybersecurity team mentions at the end.
-    Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
+    Ensure the response is concise, focused on actionable insights, and tailored to the specific sitrep query.
     """
 
     response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
+        model="gpt-4o-mini",  # Modified to use GPT-4 as requested
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided, but without any closing remarks or signatures."},
+            {"role": "system", "content": "You are a cybersecurity expert providing focused responses to sitrep queries. Your responses should be concise, actionable, and directly address the issue raised in the sitrep."},
             {"role": "user", "content": prompt}
         ]
     )
