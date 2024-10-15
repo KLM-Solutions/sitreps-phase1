@@ -20,24 +20,22 @@ def generate_response(query, sitrep_title, name):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
     response_time = current_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
-    # Modified prompt to ensure the response is structured as required
     prompt = f"""
     Based on the following sitrep information:
     SITREP TITLE: {sitrep_title}
     QUERY: {query}
 
-    Generate a detailed response based on the query, following this structure:
-    1. Address {name} and thank them for their inquiry about the files or hash.
-    2. Summarize the key findings in the sitrep related to the files or hash.
-    3. Provide next steps for investigating the files, focusing on discovering file paths and assessing anomalies.
-    4. Provide detailed, actionable steps such as integrity checks, file path checks, and system behavior analysis.
-    5. Offer additional recommendations based on standard cybersecurity practices (e.g., setting up monitoring for similar hashes, cross-referencing with malicious file databases).
-    6. Avoid giving generic responses; tailor the response based on the specific situation raised in the sitrep.
+    Generate a detailed response following this structure:
+    1. Address the person by name (if provided) and thank them for their inquiry.
+    2. Provide specific information about the alert mentioned in the SITREP TITLE.
+    3. Explain the implications of the observed behavior.
+    4. Suggest actionable steps for investigation or resolution.
+    5. If applicable, provide information about thresholds or statistics related to the issue.
+    6. Offer guidance on interpreting the information.
+    7. Ask for any necessary confirmations or further information.
 
-    Example response structure:
-
+    Use the following format:
     {name}, {response_time}
-
     Robert Mettee, Wed, 09 Oct 2024 20:34:55 GMT
 Gradient team can you provide us more information on this alert? What is actionable from this alert? What is the threshold for an unusual amount of kerberos requests?
 
@@ -55,16 +53,14 @@ Please let us know if this activity is expected, and if these are high-value acc
     """
 
     response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",  # Using GPT-4 for better context handling
+        model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing focused responses to sitrep queries. Your responses should be comprehensive, actionable, and directly address the issue raised in the sitrep."},
+            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided, but without any closing remarks or signatures."},
             {"role": "user", "content": prompt}
         ]
     )
 
     return response.choices[0].message['content']
-
-
 
 def process_sitrep(content):
     try:
