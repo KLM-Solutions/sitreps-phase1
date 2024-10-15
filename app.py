@@ -34,38 +34,27 @@ def generate_response(sitrep_info, full_content):
     response_time = current_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
     prompt = f"""
-    Analyze the following complete sitrep content and provide a detailed response:
+    Analyze the following sitrep content and provide a concise response:
 
-    FULL SITREP CONTENT:
-    {full_content}
-
-    EXTRACTED INFORMATION:
     SITREP TITLE: {sitrep_info['title']}
-    SITREP STATUS: {sitrep_info['status']}
-    ORGANIZATION: {sitrep_info['organization']}
     QUERY: {sitrep_info['query']}
 
-    Generate a detailed response following this structure:
-    1. Address {sitrep_info['name']} and acknowledge their query or the sitrep context.
-    2. Provide specific information about the alert or issue mentioned in the SITREP TITLE.
-    3. Explain the implications of the observed behavior or situation.
-    4. Suggest actionable steps for investigation or resolution.
-    5. If applicable, provide information about thresholds or statistics related to the issue.
-    6. Offer guidance on interpreting the information.
-    7. Ask for any necessary confirmations or further information.
+    Generate a brief response that:
+    1. Addresses the core issue or query.
+    2. Provides 1-2 key insights or recommendations.
+    3. Suggests a primary action step.
 
     Use the following format:
     {sitrep_info['name']}, {response_time}
-    [Detailed response following the structure above]
+    [Concise response addressing the points above]
 
-    Do not include any closing remarks, "Best regards," signatures, or cybersecurity team mentions at the end.
-    Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
+    Limit the response to 3-4 sentences. Focus on the most critical information and actionable advice.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, without any closing remarks or signatures."},
+            {"role": "system", "content": "You are a cybersecurity expert providing brief, focused responses to sitrep queries. Your responses should be concise yet informative, prioritizing key insights and actionable advice."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -82,7 +71,7 @@ def process_sitrep(content):
         return "Error in processing", "Unable to generate a response due to an error. Please check the sitrep content and try again."
 
 def main():
-    st.title("Comprehensive Sitrep Processor")
+    st.title("Concise Sitrep Processor")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
