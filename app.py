@@ -31,7 +31,7 @@ def extract_sitrep_info(content):
 
 def classify_query(query):
     classification_prompt = f"""
-    Determine if the following query falls under Phase 1 or requires more specific analysis (Phase 2/3).
+    Determine if the following query falls under Phase 1 or requires more specific analysis (Another Phase).
 
     Phase 1 queries are general in nature and typically ask for:
     - More information
@@ -45,7 +45,7 @@ def classify_query(query):
 
     Query: {query}
 
-    Respond with either "Phase 1" or "Other Phase" followed by a brief explanation.
+    Respond with only "Phase 1" or "Another Phase" without any explanation.
     """
 
     classification_response = openai.ChatCompletion.create(
@@ -56,8 +56,7 @@ def classify_query(query):
         ]
     )
 
-    classification = classification_response.choices[0].message['content']
-    return "Phase 1" if "Phase 1" in classification else "Other Phase"
+    return classification_response.choices[0].message['content'].strip()
 
 def generate_response(sitrep_info):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
@@ -127,7 +126,7 @@ def main():
                 st.subheader("Generated Response")
                 st.markdown(response)
             else:
-                st.warning("This query requires more specific analysis and will be handled by a Customer Analyst.")
+                st.warning("Another Phase")
 
 if __name__ == "__main__":
     main()
