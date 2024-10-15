@@ -9,6 +9,17 @@ from datetime import datetime, timedelta
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def extract_query(content):
+    # First, try to extract the query directly from LAST SUMMARY RESPONSE
+    last_summary_match = re.search(r'LAST SUMMARY RESPONSE:(.*?)$', content, re.DOTALL)
+    if last_summary_match:
+        last_summary = last_summary_match.group(1).strip()
+        name_query_match = re.match(r'(.*?),\s*(.*?)\s*GMT\s*(.*)', last_summary, re.DOTALL)
+        if name_query_match:
+            name = name_query_match.group(1).strip()
+            query = name_query_match.group(3).strip()
+            return query, name
+
+    # If direct extraction fails, use LLM to infer the query
     extraction_prompt = f"""
     Analyze the following sitrep content and extract:
     1. The most relevant user query or request
