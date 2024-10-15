@@ -19,12 +19,37 @@ def extract_sitrep_info(content):
         "last_response": last_response.group(1).strip() if last_response else ""
     }
 
-def generate_response(prompt):
+def is_general_inquiry(query):
+    general_keywords = ["how", "what", "best practice", "recommend", "mitigate", "prevent", "improve"]
+    return any(keyword in query.lower() for keyword in general_keywords)
+
+def generate_response(sitrep_info, query):
+    if not is_general_inquiry(query):
+        return "This query requires specific analysis. A Cybersecurity Analyst will review and respond shortly."
+
     try:
+        prompt = f"""
+        Based on the following sitrep information:
+        Title: {sitrep_info['title']}
+        Status: {sitrep_info['status']}
+        Organization: {sitrep_info['organization']}
+        Last Response: {sitrep_info['last_response']}
+
+        Customer Query: {query}
+
+        Provide a specific response addressing the customer's query. Focus on:
+        1. Relevant mitigation strategies
+        2. Best practices related to the sitrep title
+        3. Specific recommendations for improving cybersecurity hygiene
+        4. Steps to prevent similar issues in the future
+
+        Ensure the response is tailored to the sitrep content and avoid generic advice.
+        """
+
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": """You are an AI assistant for a cybersecurity company. Your task is to provide general responses to customer inquiries about cybersecurity best practices, recommendations, and mitigation strategies. Focus on industry-standard guidelines and avoid customer-specific details. If a query requires specific log analysis or technical details, suggest that a Cybersecurity Analyst should review it."""},
+                {"role": "system", "content": "You are an AI assistant for a cybersecurity company. Provide specific, relevant responses to customer inquiries based on the given sitrep information."},
                 {"role": "user", "content": prompt}
             ]
         )
@@ -35,17 +60,18 @@ def generate_response(prompt):
         return f"An error occurred: {str(e)}"
 
 def main():
-    st.title("Sitrep Processor")
+    st.title("Sitrep Processor - Phase 1")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
         return
     
     content = st.text_area("Paste the Slack message content here:", height=200)
+    query = st.text_input("Enter the customer's query:")
     
     if st.button("Process Sitrep"):
-        if not content:
-            st.error("Please paste the Slack message content before processing.")
+        if not content or not query:
+            st.error("Please provide both the Slack message content and the customer's query.")
         else:
             sitrep_info = extract_sitrep_info(content)
             
@@ -55,17 +81,7 @@ def main():
             st.write(f"Organization: {sitrep_info['organization']}")
             st.write(f"Last Response: {sitrep_info['last_response']}")
             
-            prompt = f"""
-            Based on the following sitrep information:
-            Title: {sitrep_info['title']}
-            Status: {sitrep_info['status']}
-            Organization: {sitrep_info['organization']}
-            Last Response: {sitrep_info['last_response']}
-
-            Please provide a general response with cybersecurity best practices, recommendations, or mitigation strategies related to this sitrep. Focus on industry-standard guidelines and avoid customer-specific details.
-            """
-            
-            response = generate_response(prompt)
+            response = generate_response(sitrep_info, query)
             
             st.subheader("Generated Response")
             st.write(response)
