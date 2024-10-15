@@ -71,18 +71,34 @@ def extract_and_verify(content):
     return extracted_info
 
 def generate_response(extracted_info):
-    response_prompt = f"""
-    Title: {extracted_info['title']}
-    Client Query: {extracted_info['client_query']}
+    query = extracted_info['client_query'].lower()
+    
+    # Check if the query is general in nature
+    general_keywords = ["how", "what", "best practice", "recommend", "mitigate", "prevent", "improve"]
+    is_general_query = any(keyword in query for keyword in general_keywords)
+    
+    if not is_general_query:
+        return "This query requires specific analysis. A Cybersecurity Analyst will review and respond shortly."
 
-    Provide a concise 2-3 line response addressing the client's query or concern.
-    Focus on immediate next steps or brief recommendations.
+    response_prompt = f"""
+    Provide a concise response to the following cybersecurity query:
+    "{extracted_info['client_query']}"
+
+    Focus on one or more of the following aspects, as relevant to the query:
+    1. Mitigation strategies for potential security threats
+    2. Best practices for securing a network
+    3. General recommendations for improving cybersecurity hygiene
+    4. Steps to prevent the issue from occurring again
+
+    Base your response on industry-standard guidelines and practices. 
+    Do not include any customer-specific information or recommendations that would require analysis of specific logs or systems.
+    Limit your response to 2-3 sentences.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity assistant. Provide brief, focused responses."},
+            {"role": "system", "content": "You are a cybersecurity assistant providing general advice based on industry standards. Avoid customer-specific details."},
             {"role": "user", "content": response_prompt}
         ]
     )
