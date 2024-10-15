@@ -40,27 +40,24 @@ def is_general_query(query):
     return any(keyword in query.lower() for keyword in general_keywords)
 
 def generate_response(query):
-    if not is_general_query(query):
-        return "This query requires specific analysis. A Cybersecurity Analyst will review and respond shortly."
-
     response_prompt = f"""
-    Provide a concise 2-3 line response to the following cybersecurity question:
+    Provide a concise 2-3 line response to the following cybersecurity query:
     "{query}"
 
-    Focus on providing practical, general advice based on industry-standard guidelines and best practices. 
-    Do not include any customer-specific information or recommendations that would require analysis of specific logs or systems.
+    Focus on providing practical advice based on industry-standard guidelines and best practices. 
+    If the query is specific or technical, provide general guidance and mention that further analysis may be needed.
+    Limit your response to 2-3 lines.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity assistant providing brief, focused responses based on industry standards. Limit your response to 2-3 lines."},
+            {"role": "system", "content": "You are a cybersecurity assistant providing brief, focused responses based on industry standards. Always provide a 2-3 line response, regardless of the query type."},
             {"role": "user", "content": response_prompt}
         ]
     )
 
     return response.choices[0].message['content']
-
 def process_sitrep(content):
     try:
         extracted_info = extract_query(content)
