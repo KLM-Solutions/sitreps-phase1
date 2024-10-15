@@ -10,11 +10,11 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 def clean_json_string(json_string):
     return re.sub(r'^```json\n|```$', '', json_string, flags=re.MULTILINE).strip()
 
-def extract_and_verify(content):
+def extract_query(content):
     extraction_prompt = f"""
-    Carefully analyze the following content and extract:
+    Analyze the following content and extract:
     1. SITREP TITLE
-    2. CLIENT QUERY (Look for any client question or concern throughout the entire content, including the title)
+    2. CLIENT QUERY (Look for any client question or concern in the SITREP TITLE or the most recent response)
 
     Content:
     {content}
@@ -27,62 +27,25 @@ def extract_and_verify(content):
     extraction_response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a precise extractor of key information. Analyze thoroughly and provide accurate results."},
+            {"role": "system", "content": "Extract key information accurately from the given content."},
             {"role": "user", "content": extraction_prompt}
         ]
     )
     
     cleaned_json = clean_json_string(extraction_response.choices[0].message['content'])
-    extracted_info = json.loads(cleaned_json)
+    return json.loads(cleaned_json)
 
-    # Double-check mechanism
-    verification_prompt = f"""
-    Re-analyze the following content and verify if the extracted information is accurate:
-
-    Content:
-    {content}
-
-    Extracted Information:
-    Title: {extracted_info['title']}
-    Client Query: {extracted_info['client_query']}
-
-    If any information is incorrect or incomplete, provide the corrected version.
-    If everything is correct, simply respond with "Verified".
-
-    Provide your response in JSON format with keys: verified, title, client_query
-    """
-
-    verification_response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a meticulous verifier of extracted information. Double-check thoroughly and provide accurate results."},
-            {"role": "user", "content": verification_prompt}
-        ]
-    )
-
-    verified_info = json.loads(clean_json_string(verification_response.choices[0].message['content']))
-    
-    if verified_info['verified'] != "Verified":
-        extracted_info = {
-            'title': verified_info['title'],
-            'client_query': verified_info['client_query']
-        }
-
-    return extracted_info
-
-def generate_response(extracted_info):
-    query = extracted_info['client_query'].lower()
-    
-    # Check if the query is general in nature
+def is_general_query(query):
     general_keywords = ["how", "what", "best practice", "recommend", "mitigate", "prevent", "improve"]
-    is_general_query = any(keyword in query for keyword in general_keywords)
-    
-    if not is_general_query:
+    return any(keyword in query.lower() for keyword in general_keywords)
+
+def generate_response(query):
+    if not is_general_query(query):
         return "This query requires specific analysis. A Cybersecurity Analyst will review and respond shortly."
 
     response_prompt = f"""
     Provide a concise response to the following cybersecurity query:
-    "{extracted_info['client_query']}"
+    "{query}"
 
     Focus on one or more of the following aspects, as relevant to the query:
     1. Mitigation strategies for potential security threats
@@ -107,14 +70,14 @@ def generate_response(extracted_info):
 
 def process_sitrep(content):
     try:
-        extracted_info = extract_and_verify(content)
-        response = generate_response(extracted_info)
+        extracted_info = extract_query(content)
+        response = generate_response(extracted_info['client_query'])
         return extracted_info, response
     except Exception as e:
         return None, f"An error occurred: {str(e)}"
 
 def main():
-    st.title("Sitrep Processor - Thorough Analysis")
+    st.title("Sitrep Processor - Phase 1")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
