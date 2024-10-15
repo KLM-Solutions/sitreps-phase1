@@ -1,14 +1,10 @@
 import streamlit as st
 import openai
 import os
-import json
 import re
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
-
-def clean_json_string(json_string):
-    return re.sub(r'^```json\n|```$', '', json_string, flags=re.MULTILINE).strip()
 
 def extract_sitrep_info(content):
     extraction_prompt = f"""
@@ -16,40 +12,35 @@ def extract_sitrep_info(content):
     1. SITREP TITLE
     2. SITREP STATUS
     3. ORGANIZATION
-    4. FULL CONVERSATION HISTORY (including timestamps, names, and messages)
-    5. MAIN ISSUE or ALERT DESCRIPTION
+    4. LAST SUMMARY RESPONSE (including timestamp, name, and message)
 
     Content:
     {content}
 
-    Provide the output in JSON format with keys: title, status, organization, conversation_history, main_issue
-    The conversation_history should be a list of dictionaries, each containing 'timestamp', 'name', and 'message' keys.
+    Provide the output as a Python dictionary.
     """
 
     extraction_response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "Extract detailed information from the sitrep content, including the full conversation history."},
+            {"role": "system", "content": "Extract key information from the sitrep content."},
             {"role": "user", "content": extraction_prompt}
         ]
     )
     
-    cleaned_json = clean_json_string(extraction_response.choices[0].message['content'])
-    return json.loads(cleaned_json)
+    return eval(extraction_response.choices[0].message['content'])
 
 def generate_detailed_response(sitrep_info):
     response_prompt = f"""
-    Based on the following sitrep information, generate a detailed response similar to the example provided:
+    Based on the following sitrep information, generate a detailed response:
 
-    SITREP TITLE: {sitrep_info['title']}
-    ORGANIZATION: {sitrep_info['organization']}
-    MAIN ISSUE: {sitrep_info['main_issue']}
-    CONVERSATION HISTORY:
-    {json.dumps(sitrep_info['conversation_history'], indent=2)}
+    SITREP TITLE: {sitrep_info['SITREP TITLE']}
+    ORGANIZATION: {sitrep_info['ORGANIZATION']}
+    LAST SUMMARY RESPONSE: {sitrep_info['LAST SUMMARY RESPONSE']}
 
     Your response should:
-    1. Address the latest query or concern in the conversation history
-    2. Provide detailed information about the alert or issue
+    1. Address the specific query or concern in the LAST SUMMARY RESPONSE
+    2. Provide detailed information about the alert or issue mentioned in the SITREP TITLE
     3. Explain the implications of the observed behavior
     4. Suggest actionable steps for investigation or resolution
     5. Include relevant thresholds or statistics if applicable
@@ -57,7 +48,7 @@ def generate_detailed_response(sitrep_info):
     7. Ask for confirmation or further information if needed
 
     Format the response as follows:
-    **Response Summary**
+    [Timestamp in GMT]
     [Full response here, maintaining a conversational yet informative tone]
 
     Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
@@ -82,13 +73,13 @@ def process_sitrep(content):
         return None, f"An error occurred: {str(e)}"
 
 def main():
-    st.title("Comprehensive Sitrep Processor")
+    st.title("Sitrep Processor with Detailed Responses")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
         return
     
-    content = st.text_area("Paste the complete Sitrep content here:", height=300)
+    content = st.text_area("Paste the Sitrep content here:", height=300)
     
     if st.button("Process Sitrep"):
         if not content:
