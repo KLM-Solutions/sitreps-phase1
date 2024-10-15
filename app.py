@@ -82,7 +82,7 @@ def process_sitrep(content):
         return "Error in processing", "Unable to generate a response due to an error. Please check the sitrep content and try again."
 
 def main():
-    st.title("Comprehensive Sitrep Processor")
+    st.title("Sitrep Processor Phase-1")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
