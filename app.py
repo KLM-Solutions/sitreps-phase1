@@ -60,11 +60,11 @@ def process_sitrep(content):
         query, name = extract_query_and_name(content)
         if query:
             response = generate_response(query, sitrep_title, name)
-            return response
+            return query, response
         else:
-            return "Failed to extract query from the sitrep content."
+            return None, "Failed to extract query from the sitrep content."
     except Exception as e:
-        return f"An error occurred: {str(e)}"
+        return None, f"An error occurred: {str(e)}"
 
 def main():
     st.title("Sitrep Processor")
@@ -79,9 +79,14 @@ def main():
         if not content:
             st.error("Please provide the Sitrep content.")
         else:
-            response = process_sitrep(content)
-            st.markdown("### Generated Response")
-            st.markdown(response)
+            query, response = process_sitrep(content)
+            if query:
+                st.subheader("User Query")
+                st.markdown(query)
+                st.subheader("Generated Response")
+                st.markdown(response)
+            else:
+                st.error(response)
 
 if __name__ == "__main__":
     main()
