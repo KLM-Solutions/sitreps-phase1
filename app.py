@@ -33,19 +33,19 @@ def generate_response(query, sitrep_title, name):
     5. If applicable, provide information about thresholds or statistics related to the issue.
     6. Offer guidance on interpreting the information.
     7. Ask for any necessary confirmations or further information.
-    8. Provide a brief closing statement.
 
     Use the following format:
     {name}, {response_time}
     [Detailed response following the structure above]
 
+    Do not include any closing remarks, "Best regards," signatures, or cybersecurity team mentions at the end.
     Ensure the response is comprehensive, tailored to the specific sitrep context, and provides valuable insights and recommendations.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided."},
+            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided, but without any closing remarks or signatures."},
             {"role": "user", "content": prompt}
         ]
     )
