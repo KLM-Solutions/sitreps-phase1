@@ -26,17 +26,30 @@ def process_sitrep(content):
         title, status, organization, last_response, client_query, is_general_inquiry
 
         For is_general_inquiry, use true if it's a general query about best practices, recommendations, or mitigation strategies, and false if it requires specific log analysis or technical details.
+
+        Ensure your entire response is a valid JSON object.
         """
 
         extraction_response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI assistant that extracts structured information from text."},
+                {"role": "system", "content": "You are an AI assistant that extracts structured information from text and outputs it as valid JSON."},
                 {"role": "user", "content": extraction_prompt}
             ]
         )
         
-        extracted_info = json.loads(extraction_response.choices[0].message['content'])
+        extraction_content = extraction_response.choices[0].message['content']
+        st.text("Raw LLM extraction output:")
+        st.code(extraction_content, language="json")
+        
+        try:
+            extracted_info = json.loads(extraction_content)
+        except json.JSONDecodeError as e:
+            st.error(f"JSON Decode Error: {str(e)}")
+            st.text("Attempting to fix JSON...")
+            # Attempt to fix common JSON issues
+            fixed_content = extraction_content.replace("'", '"').replace("\n", "")
+            extracted_info = json.loads(fixed_content)
 
         # Second LLM call to generate response
         response_prompt = f"""
@@ -84,12 +97,8 @@ def main():
             
             if extracted_info:
                 st.subheader("Extracted Information")
-                st.write(f"Title: {extracted_info['title']}")
-                st.write(f"Status: {extracted_info['status']}")
-                st.write(f"Organization: {extracted_info['organization']}")
-                st.write(f"Last Response: {extracted_info['last_response']}")
-                st.write(f"Client Query: {extracted_info['client_query']}")
-                st.write(f"Is General Inquiry: {'Yes' if extracted_info['is_general_inquiry'] else 'No'}")
+                for key, value in extracted_info.items():
+                    st.write(f"{key.capitalize()}: {value}")
             
             st.subheader("Generated Response")
             st.write(response)
