@@ -34,27 +34,30 @@ def generate_response(sitrep_info, full_content):
     response_time = current_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
     prompt = f"""
-    Analyze the following sitrep content and provide a concise response:
+    Analyze the following sitrep content and provide a balanced, informative response:
 
     SITREP TITLE: {sitrep_info['title']}
     QUERY: {sitrep_info['query']}
 
-    Generate a brief response that:
-    1. Addresses the core issue or query.
-    2. Provides 1-2 key insights or recommendations.
-    3. Suggests a primary action step.
+    Generate a response that covers the following points concisely:
+    1. Acknowledge the query and provide context about the alert or issue.
+    2. Explain the implications or potential risks of the observed behavior.
+    3. Suggest 2-3 actionable steps for investigation or resolution.
+    4. If relevant, briefly mention any thresholds or statistics related to the issue.
+    5. Offer a concise guidance on interpreting the information.
+    6. If necessary, ask for any critical additional information needed.
 
     Use the following format:
     {sitrep_info['name']}, {response_time}
-    [Concise response addressing the points above]
+    [Balanced response covering the points above]
 
-    Limit the response to 3-4 sentences. Focus on the most critical information and actionable advice.
+    Aim for a response of about 150-200 words. Focus on providing valuable insights and practical recommendations without excessive detail.
     """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing brief, focused responses to sitrep queries. Your responses should be concise yet informative, prioritizing key insights and actionable advice."},
+            {"role": "system", "content": "You are a cybersecurity expert providing informative yet concise responses to sitrep queries. Your responses should cover key points while remaining focused and practical."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -71,7 +74,7 @@ def process_sitrep(content):
         return "Error in processing", "Unable to generate a response due to an error. Please check the sitrep content and try again."
 
 def main():
-    st.title("Concise Sitrep Processor")
+    st.title("Balanced Sitrep Processor")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
