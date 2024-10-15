@@ -38,23 +38,20 @@ def generate_response(query, sitrep_title, name):
 
     {name}, {response_time}
 
-    Thank you for your inquiry regarding the file associated with the detected hash.
+    Robert Mettee, Wed, 09 Oct 2024 20:34:55 GMT
+Gradient team can you provide us more information on this alert? What is actionable from this alert? What is the threshold for an unusual amount of kerberos requests?
 
-    Based on the information available, the following files match the hash: "windows/win.ini" and "winnt/win.ini". These are common system configuration files, but to proceed further with your investigation, please consider the following steps:
+Pranith Jain, Thu, 10 Oct 2024 9:30:30 GMT 
+Hi Robert, Thank you for reaching out regarding the alert for Event ID 4769 and error code 0x1b (Server principal valid for user2user only).
+Regarding more information on the alert, this essentially means that there were Kerberos service ticket requests where the Service Principal Name (SPN) was only valid for User-to-User (U2U) authentication. These types of failures generally happen due to a mismatch or misconfiguration, often linked to service account settings or improper delegation. Monitoring this closely helps to spot any potential misconfigurations or signs of Kerberos abuse.
 
-    1. **Exact File Path Discovery**: First, locate the exact file paths of "windows/win.ini" and "winnt/win.ini" on your system. You should check whether these files exist in any non-standard directories or have duplicate copies in unexpected locations. Malicious actors sometimes hide modified versions of such files in non-standard directories.
+In terms of actionable steps, we recommend investigating the service accounts or SPNs related to these requests. The spike in requests could indicate misconfigured delegation, an expired or invalid service principal, or, in some cases, a malicious attempt to exploit Kerberos. Reviewing the service account configurations—especially U2U-based authentications—and verifying if any recent changes may have impacted delegation or SPN settings will be essential.
 
-    2. **File Integrity Check**: Verify the integrity of the identified files by comparing their hash values against known good copies. If any differences are detected, this may indicate unauthorized changes, possibly signifying compromise or tampering.
-
-    3. **Investigate Anomalies**: Review the file properties such as last modified date, file permissions, and ownership to identify any irregularities. Also, check if these files have any unusual access patterns or if they were modified by untrusted users or processes.
-
-    4. **Cross-reference with Malicious File Databases**: Search for the identified file hashes in known malicious file databases or threat intelligence platforms to verify whether they have been associated with any security incidents.
-
-    5. **System Behavior Monitoring**: It's essential to monitor the system for any unusual behavior, particularly in directories or processes related to these files. Set up alerts for any unexpected changes to these files or their hash values in the future. You can also review security logs or Gradient's logs for any associated events, such as unauthorized modifications or access attempts.
-
-    6. **Correlate with Broader Activity**: Look for other system files that may share similar hashes, and check if other systems on your network exhibit the same file modifications. This can help you detect patterns of compromise or malware spreading across multiple systems.
-
-    Please confirm whether you have already performed any checks on these file names or hashes, and let me know if further investigation or assistance is required. If you need specific tools or further data points for analysis, feel free to reach out.
+As for the threshold for an unusual amount of Kerberos requests, we observed the following spikes in volume: 1,411 requests on September 27, 781 on September 28, and 642 on September 29. While every environment is different, and there's no universal threshold, this does represent a significant deviation from typical activity and warrants further review to ensure there’s no misconfiguration or security risk.
+Please refer to the following links for guidance on viewing and resetting incorrect SPN names in your environment:
+Viewing and Resetting Incorrect SPNs - Windows Server 2003
+Viewing SPNs - Windows Server 2012 R2 and 2012
+Please let us know if this activity is expected, and if these are high-value accounts that you would like to receive alerts for in the future.
     """
 
     response = openai.ChatCompletion.create(
