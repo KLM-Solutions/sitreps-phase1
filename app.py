@@ -1,20 +1,38 @@
 import streamlit as st
 import openai
 import os
-import re
+import json
 from datetime import datetime, timedelta
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def extract_query_and_name(content):
-    match = re.search(r'LAST SUMMARY RESPONSE:(.*?)$', content, re.DOTALL)
-    if match:
-        query = match.group(1).strip()
-        name_match = re.search(r'^(.*?),', query)
-        name = name_match.group(1) if name_match else None
-        return query, name
-    return None, None
+def extract_query(content):
+    extraction_prompt = f"""
+    Analyze the following sitrep content and extract:
+    1. The most relevant user query or request
+    2. The name of the person making the query (if available)
+
+    Content:
+    {content}
+
+    Provide the output as a JSON object with keys: "query" and "name".
+    If there's no clear query, infer one based on the context of the sitrep.
+    """
+
+    extraction_response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are an AI assistant tasked with extracting the most relevant user query from sitrep content."},
+            {"role": "user", "content": extraction_prompt}
+        ]
+    )
+    
+    try:
+        extracted_info = json.loads(extraction_response.choices[0].message['content'])
+        return extracted_info['query'], extracted_info['name']
+    except json.JSONDecodeError:
+        return None, None
 
 def generate_response(query, sitrep_title, name):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
@@ -26,7 +44,7 @@ def generate_response(query, sitrep_title, name):
     QUERY: {query}
 
     Generate a detailed response following this structure:
-    1. Address the person by name (if provided) and thank them for their inquiry.
+    1. Address the person by name (if provided) and acknowledge their query.
     2. Provide specific information about the alert mentioned in the SITREP TITLE.
     3. Explain the implications of the observed behavior.
     4. Suggest actionable steps for investigation or resolution.
@@ -45,7 +63,7 @@ def generate_response(query, sitrep_title, name):
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, mimicking the style and depth of the example provided, but without any closing remarks or signatures."},
+            {"role": "system", "content": "You are a cybersecurity expert providing detailed, contextual responses to sitrep queries. Your responses should be comprehensive and tailored to the specific situation, without any closing remarks or signatures."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -54,15 +72,13 @@ def generate_response(query, sitrep_title, name):
 
 def process_sitrep(content):
     try:
-        sitrep_title_match = re.search(r'SITREP TITLE:(.*?)$', content, re.MULTILINE)
-        sitrep_title = sitrep_title_match.group(1).strip() if sitrep_title_match else "Unknown Title"
-        
-        query, name = extract_query_and_name(content)
+        sitrep_title_match = content.split("SITREP TITLE:")[1].split("\n")[0].strip()
+        query, name = extract_query(content)
         if query:
-            response = generate_response(query, sitrep_title, name)
+            response = generate_response(query, sitrep_title_match, name)
             return query, response
         else:
-            return None, "Failed to extract query from the sitrep content."
+            return None, "Failed to extract a relevant query from the sitrep content."
     except Exception as e:
         return None, f"An error occurred: {str(e)}"
 
@@ -81,7 +97,7 @@ def main():
         else:
             query, response = process_sitrep(content)
             if query:
-                st.subheader("User Query")
+                st.subheader("Identified User Query")
                 st.markdown(query)
                 st.subheader("Generated Response")
                 st.markdown(response)
