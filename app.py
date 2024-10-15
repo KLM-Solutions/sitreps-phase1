@@ -1,63 +1,71 @@
 import streamlit as st
 import openai
-import re
 import os
+import json
 
 # Set OpenAI API key from environment variable
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def extract_sitrep_info(content):
-    sitrep_title = re.search(r"SITREP TITLE: (.+)", content)
-    sitrep_status = re.search(r"SITREP STATUS: (.+)", content)
-    organization = re.search(r"ORGANIZATION: (.+)", content)
-    last_response = re.search(r"LAST SUMMARY RESPONSE:\s*([\s\S]+?)(?=\n\n|\Z)", content)
-    
-    return {
-        "title": sitrep_title.group(1) if sitrep_title else "",
-        "status": sitrep_status.group(1) if sitrep_status else "",
-        "organization": organization.group(1) if organization else "",
-        "last_response": last_response.group(1).strip() if last_response else ""
-    }
-
-def is_general_inquiry(query):
-    general_keywords = ["how", "what", "best practice", "recommend", "mitigate", "prevent", "improve"]
-    return any(keyword in query.lower() for keyword in general_keywords)
-
-def generate_response(sitrep_info, query):
-    if not is_general_inquiry(query):
-        return "This query requires specific analysis. A Cybersecurity Analyst will review and respond shortly."
-
+def process_sitrep(content):
     try:
-        prompt = f"""
-        Based on the following sitrep information:
-        Title: {sitrep_info['title']}
-        Status: {sitrep_info['status']}
-        Organization: {sitrep_info['organization']}
-        Last Response: {sitrep_info['last_response']}
+        # First LLM call to extract information and identify query
+        extraction_prompt = f"""
+        Extract the following information from the given content:
+        1. SITREP TITLE
+        2. SITREP STATUS
+        3. ORGANIZATION
+        4. LAST SUMMARY RESPONSE
+        5. CLIENT QUERY
 
-        Customer Query: {query}
+        Also, determine if the CLIENT QUERY is a general inquiry or requires specific analysis.
 
-        Provide a specific response addressing the customer's query. Focus on:
-        1. Relevant mitigation strategies
-        2. Best practices related to the sitrep title
-        3. Specific recommendations for improving cybersecurity hygiene
-        4. Steps to prevent similar issues in the future
+        Content:
+        {content}
 
-        Ensure the response is tailored to the sitrep content and avoid generic advice.
+        Provide the output in JSON format with the following keys:
+        title, status, organization, last_response, client_query, is_general_inquiry
+
+        For is_general_inquiry, use true if it's a general query about best practices, recommendations, or mitigation strategies, and false if it requires specific log analysis or technical details.
+        """
+
+        extraction_response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an AI assistant that extracts structured information from text."},
+                {"role": "user", "content": extraction_prompt}
+            ]
+        )
+        
+        extracted_info = json.loads(extraction_response.choices[0].message['content'])
+
+        # Second LLM call to generate response
+        response_prompt = f"""
+        Based on the following extracted information:
+        Title: {extracted_info['title']}
+        Status: {extracted_info['status']}
+        Organization: {extracted_info['organization']}
+        Last Response: {extracted_info['last_response']}
+        Client Query: {extracted_info['client_query']}
+
+        {"Provide a specific response addressing the client's query. Focus on relevant mitigation strategies, best practices, and recommendations related to the SITREP title. If the query is about NTP (Network Time Protocol), provide specific best practices for NTP security." if extracted_info['is_general_inquiry'] else "This query requires specific analysis. Explain that a Cybersecurity Analyst will review and respond shortly."}
+
+        Ensure the response is tailored to the SITREP content and avoid generic advice.
         """
 
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI assistant for a cybersecurity company. Provide specific, relevant responses to customer inquiries based on the given sitrep information."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You are an AI assistant for a cybersecurity company. Provide specific, relevant responses to client inquiries based on the given SITREP information."},
+                {"role": "user", "content": response_prompt}
             ]
         )
-        return response.choices[0].message['content']
+
+        return extracted_info, response.choices[0].message['content']
+
     except openai.error.AuthenticationError:
-        return "Error: Invalid API key. Please check your OPENAI_API_KEY environment variable."
+        return None, "Error: Invalid API key. Please check your OPENAI_API_KEY environment variable."
     except Exception as e:
-        return f"An error occurred: {str(e)}"
+        return None, f"An error occurred: {str(e)}"
 
 def main():
     st.title("Sitrep Processor - Phase 1")
@@ -67,21 +75,21 @@ def main():
         return
     
     content = st.text_area("Paste the Slack message content here:", height=200)
-    query = st.text_input("Enter the customer's query:")
     
     if st.button("Process Sitrep"):
-        if not content or not query:
-            st.error("Please provide both the Slack message content and the customer's query.")
+        if not content:
+            st.error("Please provide the Slack message content.")
         else:
-            sitrep_info = extract_sitrep_info(content)
+            extracted_info, response = process_sitrep(content)
             
-            st.subheader("Extracted Information")
-            st.write(f"Title: {sitrep_info['title']}")
-            st.write(f"Status: {sitrep_info['status']}")
-            st.write(f"Organization: {sitrep_info['organization']}")
-            st.write(f"Last Response: {sitrep_info['last_response']}")
-            
-            response = generate_response(sitrep_info, query)
+            if extracted_info:
+                st.subheader("Extracted Information")
+                st.write(f"Title: {extracted_info['title']}")
+                st.write(f"Status: {extracted_info['status']}")
+                st.write(f"Organization: {extracted_info['organization']}")
+                st.write(f"Last Response: {extracted_info['last_response']}")
+                st.write(f"Client Query: {extracted_info['client_query']}")
+                st.write(f"Is General Inquiry: {'Yes' if extracted_info['is_general_inquiry'] else 'No'}")
             
             st.subheader("Generated Response")
             st.write(response)
