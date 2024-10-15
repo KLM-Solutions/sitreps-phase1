@@ -59,48 +59,34 @@ def classify_query(query):
     classification = classification_response.choices[0].message['content']
     return "Phase 1" if "Phase 1" in classification else "Other Phase"
 
-def generate_response(sitrep_info, full_content, phase):
+def generate_response(sitrep_info):
     current_time = datetime.utcnow() + timedelta(hours=1)  # Assuming GMT+1
     response_time = current_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
 
-    if phase == "Phase 1":
-        prompt = f"""
-        Based on the following sitrep information:
-        SITREP TITLE: {sitrep_info['title']}
-        QUERY: {sitrep_info['query']}
+    prompt = f"""
+    Based on the following sitrep information:
+    SITREP TITLE: {sitrep_info['title']}
+    QUERY: {sitrep_info['query']}
 
-        Provide a general response that focuses on:
-        1. Best practices related to the issue
-        2. General mitigation strategies
-        3. Industry-standard recommendations
-        4. Steps to improve overall cybersecurity hygiene
+    Provide a general response that focuses on:
+    1. Best practices related to the issue
+    2. General mitigation strategies
+    3. Industry-standard recommendations
+    4. Steps to improve overall cybersecurity hygiene
 
-        Do not include any specific customer information or log analysis.
+    Do not include any specific customer information or log analysis.
 
-        Use the following format:
-        {sitrep_info['name']}, {response_time}
-        [General response following the guidelines above]
+    Use the following format:
+    {sitrep_info['name']}, {response_time}
+    [General response following the guidelines above]
 
-        Ensure the response is informative but not specific to any particular system or logs.
-        """
-    else:
-        prompt = f"""
-        This query requires more specific analysis and will be handled by a Customer Analyst.
-
-        SITREP TITLE: {sitrep_info['title']}
-        QUERY: {sitrep_info['query']}
-
-        Provide a brief response explaining that this query needs more detailed analysis and will be addressed by a specialized team.
-
-        Use the following format:
-        {sitrep_info['name']}, {response_time}
-        [Brief response explaining the need for further analysis]
-        """
+    Ensure the response is informative but not specific to any particular system or logs.
+    """
 
     response = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a cybersecurity expert providing responses to sitrep queries, tailoring your response based on the query's classification."},
+            {"role": "system", "content": "You are a cybersecurity expert providing responses to general sitrep queries, focusing on best practices and industry-standard recommendations."},
             {"role": "user", "content": prompt}
         ]
     )
@@ -111,14 +97,17 @@ def process_sitrep(content):
     try:
         sitrep_info = extract_sitrep_info(content)
         phase = classify_query(sitrep_info['query'])
-        response = generate_response(sitrep_info, content, phase)
-        return sitrep_info['query'], response, phase
+        if phase == "Phase 1":
+            response = generate_response(sitrep_info)
+            return sitrep_info['query'], response, phase
+        else:
+            return sitrep_info['query'], None, phase
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
-        return "Error in processing", "Unable to generate a response due to an error. Please check the sitrep content and try again.", "Error"
+        return "Error in processing", None, "Error"
 
 def main():
-    st.title("Comprehensive Sitrep Processor")
+    st.title("Sitrep Processor for Phase 1 Queries")
     
     if not openai.api_key:
         st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
@@ -133,10 +122,12 @@ def main():
             query, response, phase = process_sitrep(content)
             st.subheader("Identified Query")
             st.markdown(query)
-            st.subheader("Query Classification")
-            st.markdown(phase)
-            st.subheader("Generated Response")
-            st.markdown(response)
+            
+            if phase == "Phase 1":
+                st.subheader("Generated Response")
+                st.markdown(response)
+            else:
+                st.warning("This query requires more specific analysis and will be handled by a Customer Analyst.")
 
 if __name__ == "__main__":
     main()
