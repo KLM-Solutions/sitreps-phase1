@@ -16,16 +16,16 @@ def extract_sitrep_info(content):
     last_summary_match = re.search(r'LAST SUMMARY RESPONSE:(.*?)$', content, re.DOTALL)
     if last_summary_match:
         last_summary = last_summary_match.group(1).strip()
-        name_query_match = re.match(r'(.*?),\s*(.*?)\s*GMT\s*(.*)', last_summary, re.DOTALL)
-        if name_query_match:
-            sitrep_info['name'] = name_query_match.group(1).strip()
-            sitrep_info['query'] = name_query_match.group(3).strip()
+        # Remove the name, timestamp, and any introductory message
+        query_match = re.search(r'(?:.*?,\s*.*?\s*GMT\s*)(.*)', last_summary, re.DOTALL)
+        if query_match:
+            sitrep_info['query'] = query_match.group(1).strip()
         else:
-            sitrep_info['name'] = 'Analyst'
             sitrep_info['query'] = last_summary
     else:
-        sitrep_info['name'] = 'Analyst'
         sitrep_info['query'] = f"Please provide an analysis of the issue: {sitrep_info['title']}"
+    
+    sitrep_info['name'] = 'Analyst'  # Default to 'Analyst' as we're removing the actual name
 
     return sitrep_info
 
