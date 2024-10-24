@@ -1,7 +1,6 @@
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
 from langchain.chains import LLMChain
 from langchain.prompts.chat import (
     ChatPromptTemplate,
@@ -12,9 +11,11 @@ import openai
 from typing import Dict, Optional, List
 import re
 import os
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 # API Configuration
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')  # Get API key from environment variable
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 openai.api_key = OPENAI_API_KEY
 
 # Template definitions
@@ -44,20 +45,31 @@ class SitrepAnalyzer:
     def __init__(self):
         self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
         self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
+            model_name="gpt-4",
             temperature=0.1,
             openai_api_key=OPENAI_API_KEY
         )
-        self.setup_vector_store()
+        self.template_embeddings = None
+        self.setup_embeddings()
     
-    def setup_vector_store(self):
-        """Initialize FAISS vector store with templates"""
-        self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
+    def setup_embeddings(self):
+        """Initialize embeddings for templates"""
+        self.template_embeddings = self.embeddings.embed_documents(SITREP_TEMPLATES)
     
     def find_matching_template(self, sitrep_text: str, top_k: int = 1) -> List[str]:
-        """Find most similar template(s) using similarity search"""
-        matches = self.vector_store.similarity_search(sitrep_text, k=top_k)
-        return [match.page_content for match in matches]
+        """Find most similar template(s) using cosine similarity"""
+        query_embedding = self.embeddings.embed_query(sitrep_text)
+        
+        # Calculate similarities
+        similarities = cosine_similarity(
+            [query_embedding],
+            self.template_embeddings
+        )[0]
+        
+        # Get top-k indices
+        top_indices = np.argsort(similarities)[-top_k:][::-1]
+        
+        return [SITREP_TEMPLATES[i] for i in top_indices]
     
     def extract_status(self, text: str) -> str:
         """Extract status information from the alert summary"""
@@ -109,8 +121,7 @@ class SitrepAnalyzer:
         
         system_message = SystemMessagePromptTemplate.from_template(
             """You are an expert security analyst with deep experience in threat detection and incident response.
-            Your task is to analyze security alerts and provide clear, actionable insights.
-            Format your response using markdown headers and bullet points."""
+            Your task is to analyze security alerts and provide clear, actionable insights."""
         )
         
         if client_query:
@@ -123,46 +134,10 @@ class SitrepAnalyzer:
             
             Client Query: {query}
             
-            Provide analysis using this format:
-            
-            ## Query Response
-            
-            ### Direct Answer to Client's Question
-            [Provide direct, clear answer]
-            
-            ### Technical Justification
-            [Provide technical explanation]
-            
-            ### Relevant Context
-            [Provide important contextual information]
-            
-            ## Technical Summary
-            
-            ### Key Findings
-            - [Finding 1]
-            - [Finding 2]
-            - [Finding 3]
-            
-            ### Critical Indicators
-            - [Indicator 1]
-            - [Indicator 2]
-            - [Indicator 3]
-            
-            ## Required Actions
-            
-            ### Immediate Steps
-            - [Step 1]
-            - [Step 2]
-            
-            ### Investigation Points
-            - [Point 1]
-            - [Point 2]
-            - [Point 3]
-            
-            ### Mitigation Measures
-            - [Measure 1]
-            - [Measure 2]
-            - [Measure 3]
+            Provide a comprehensive analysis focusing on:
+            1. Direct answer to client's question
+            2. Technical analysis
+            3. Required actions
             """
         else:
             human_template = """
@@ -172,35 +147,10 @@ class SitrepAnalyzer:
             Alert Summary:
             {alert_summary}
             
-            Provide analysis using this format:
-            
-            ## Technical Summary
-            
-            ### Key Findings
-            - [Finding 1]
-            - [Finding 2]
-            - [Finding 3]
-            
-            ### Critical Indicators
-            - [Indicator 1]
-            - [Indicator 2]
-            - [Indicator 3]
-            
-            ## Required Actions
-            
-            ### Immediate Steps
-            - [Step 1]
-            - [Step 2]
-            
-            ### Investigation Points
-            - [Point 1]
-            - [Point 2]
-            - [Point 3]
-            
-            ### Mitigation Measures
-            - [Measure 1]
-            - [Measure 2]
-            - [Measure 3]
+            Provide a comprehensive analysis focusing on:
+            1. Technical findings
+            2. Critical indicators
+            3. Required actions
             """
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
