@@ -1,21 +1,15 @@
 import streamlit as st
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chains import LLMChain
-from langchain.prompts.chat import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate
-)
 import openai
-from typing import Dict, Optional, List
-import re
 import os
-from sklearn.metrics.pairwise import cosine_similarity
+import re
 import numpy as np
+from typing import Dict, Optional, List
+import json
 
 # API Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+if not OPENAI_API_KEY:
+    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 openai.api_key = OPENAI_API_KEY
 
 # Template definitions
@@ -43,28 +37,32 @@ SITREP_TEMPLATES = [
 
 class SitrepAnalyzer:
     def __init__(self):
-        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=OPENAI_API_KEY
-        )
         self.template_embeddings = None
         self.setup_embeddings()
     
+    def get_embedding(self, text: str) -> List[float]:
+        """Get embeddings using OpenAI API"""
+        response = openai.Embedding.create(
+            input=text,
+            model="text-embedding-ada-002"
+        )
+        return response['data'][0]['embedding']
+    
     def setup_embeddings(self):
         """Initialize embeddings for templates"""
-        self.template_embeddings = self.embeddings.embed_documents(SITREP_TEMPLATES)
+        self.template_embeddings = [self.get_embedding(template) for template in SITREP_TEMPLATES]
+    
+    def cosine_similarity(self, a, b):
+        """Calculate cosine similarity between two vectors"""
+        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
     
     def find_matching_template(self, sitrep_text: str, top_k: int = 1) -> List[str]:
         """Find most similar template(s) using cosine similarity"""
-        query_embedding = self.embeddings.embed_query(sitrep_text)
+        query_embedding = self.get_embedding(sitrep_text)
         
         # Calculate similarities
-        similarities = cosine_similarity(
-            [query_embedding],
-            self.template_embeddings
-        )[0]
+        similarities = [self.cosine_similarity(query_embedding, template_embedding) 
+                      for template_embedding in self.template_embeddings]
         
         # Get top-k indices
         top_indices = np.argsort(similarities)[-top_k:][::-1]
@@ -84,30 +82,24 @@ class SitrepAnalyzer:
         if status == "No status found":
             return {"status_analysis": "No status information found in the alert summary."}
         
-        system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst specializing in status code analysis.
-            Provide precise, technical interpretations of status codes in security contexts."""
-        )
-        
-        human_message = HumanMessagePromptTemplate.from_template(
-            """Analyze this status code in the context of the template:
-            Template: {template}
-            Status: {status}
-            
-            Provide a concise technical analysis including:
-            1. Status code meaning
-            2. Security implications
-            3. Relevance to template
-            
-            Be precise and technical. Max 50 words."""
-        )
-        
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-        
         try:
-            result = chain.run(template=template, status=status)
-            return {"status_analysis": result.strip()}
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are an expert security analyst specializing in status code analysis."},
+                    {"role": "user", "content": f"""Analyze this status code in the context of the template:
+                    Template: {template}
+                    Status: {status}
+                    
+                    Provide a concise technical analysis including:
+                    1. Status code meaning
+                    2. Security implications
+                    3. Relevance to template
+                    
+                    Be precise and technical. Max 50 words."""}
+                ]
+            )
+            return {"status_analysis": response.choices[0].message.content.strip()}
         except Exception as e:
             return {"error": f"Status analysis error: {str(e)}"}
 
@@ -119,51 +111,27 @@ class SitrepAnalyzer:
         status = self.extract_status(alert_summary)
         status_analysis = self.analyze_status(status, template)
         
-        system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst with deep experience in threat detection and incident response.
-            Your task is to analyze security alerts and provide clear, actionable insights."""
-        )
-        
-        if client_query:
-            human_template = """
-            Context:
-            Template Type: {template}
-            Status: {status}
-            Alert Summary:
-            {alert_summary}
-            
-            Client Query: {query}
-            
-            Provide a comprehensive analysis focusing on:
-            1. Direct answer to client's question
-            2. Technical analysis
-            3. Required actions
-            """
-        else:
-            human_template = """
-            Context:
-            Template Type: {template}
-            Status: {status}
-            Alert Summary:
-            {alert_summary}
-            
-            Provide a comprehensive analysis focusing on:
-            1. Technical findings
-            2. Critical indicators
-            3. Required actions
-            """
-        
-        human_message = HumanMessagePromptTemplate.from_template(human_template)
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-        
         try:
-            chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-            analysis = chain.run(
-                template=template,
-                status=status,
-                alert_summary=alert_summary,
-                query=client_query if client_query else ""
+            messages = [
+                {"role": "system", "content": "You are an expert security analyst with deep experience in threat detection and incident response."},
+                {"role": "user", "content": f"""Analyze this security alert:
+                Template Type: {template}
+                Status: {status}
+                Alert Summary: {alert_summary}
+                {f'Client Query: {client_query}' if client_query else ''}
+                
+                Provide a comprehensive analysis including:
+                1. Technical findings
+                2. Critical indicators
+                3. Required actions"""}
+            ]
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=messages
             )
+            
+            analysis = response.choices[0].message.content
             
             return {
                 "template": template,
