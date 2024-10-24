@@ -1,6 +1,6 @@
 import streamlit as st
-from langchain_openai import ChatOpenAI
-from langchain_openai import OpenAIEmbeddings
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import LLMChain
 from langchain.prompts.chat import (
@@ -8,12 +8,13 @@ from langchain.prompts.chat import (
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate
 )
+import openai
 from typing import Dict, Optional, List
 import re
-import os
 
 # API Configuration
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]  # Replace this with secret in Streamlit Cloud
+openai.api_key = OPENAI_API_KEY
 
 # Template definitions
 SITREP_TEMPLATES = [
@@ -40,10 +41,11 @@ SITREP_TEMPLATES = [
 
 class SitrepAnalyzer:
     def __init__(self):
-        self.embeddings = OpenAIEmbeddings()
+        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
         self.llm = ChatOpenAI(
             model_name="gpt-4",
-            temperature=0.1
+            temperature=0.1,
+            openai_api_key=OPENAI_API_KEY
         )
         self.setup_vector_store()
     
@@ -296,6 +298,38 @@ def main():
             left: -15px;
             color: #3498db;
         }
+        h2 {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #2c3e50 !important;
+            margin-top: 25px !important;
+            margin-bottom: 15px !important;
+        }
+        h3 {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            color: #34495e !important;
+            margin-top: 20px !important;
+            margin-bottom: 10px !important;
+        }
+        ul {
+            margin-left: 20px !important;
+            margin-bottom: 15px !important;
+        }
+        li {
+            margin-bottom: 8px !important;
+        }
+        .stButton>button {
+            background-color: #2a5298;
+            color: white;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-weight: bold;
+        }
+        .stTextArea>div>div>textarea {
+            border-radius: 5px;
+            border-color: #e0e0e0;
+        }
         </style>
         """, unsafe_allow_html=True)
     
@@ -347,7 +381,7 @@ def main():
                 
                 # Alert Analysis
                 st.markdown('<p class="section-header">Alert Analysis</p>', unsafe_allow_html=True)
-                st.markdown(result["analysis"])
+                st.markdown(result["analysis"], unsafe_allow_html=True)
                 
                 # Download button
                 combined_analysis = f"""
