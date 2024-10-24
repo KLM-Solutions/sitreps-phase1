@@ -1,16 +1,19 @@
 import streamlit as st
-import openai
-import os
-import re
-import numpy as np
+from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chains import LLMChain
+from langchain.prompts.chat import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate
+)
 from typing import Dict, Optional, List
-import json
+import re
+import os
 
 # API Configuration
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-if not OPENAI_API_KEY:
-    OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-openai.api_key = OPENAI_API_KEY
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
 # Template definitions
 SITREP_TEMPLATES = [
@@ -37,37 +40,21 @@ SITREP_TEMPLATES = [
 
 class SitrepAnalyzer:
     def __init__(self):
-        self.template_embeddings = None
-        self.setup_embeddings()
-    
-    def get_embedding(self, text: str) -> List[float]:
-        """Get embeddings using OpenAI API"""
-        response = openai.Embedding.create(
-            input=text,
-            model="text-embedding-ada-002"
+        self.embeddings = OpenAIEmbeddings()
+        self.llm = ChatOpenAI(
+            model_name="gpt-4",
+            temperature=0.1
         )
-        return response['data'][0]['embedding']
+        self.setup_vector_store()
     
-    def setup_embeddings(self):
-        """Initialize embeddings for templates"""
-        self.template_embeddings = [self.get_embedding(template) for template in SITREP_TEMPLATES]
-    
-    def cosine_similarity(self, a, b):
-        """Calculate cosine similarity between two vectors"""
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    def setup_vector_store(self):
+        """Initialize FAISS vector store with templates"""
+        self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
     
     def find_matching_template(self, sitrep_text: str, top_k: int = 1) -> List[str]:
-        """Find most similar template(s) using cosine similarity"""
-        query_embedding = self.get_embedding(sitrep_text)
-        
-        # Calculate similarities
-        similarities = [self.cosine_similarity(query_embedding, template_embedding) 
-                      for template_embedding in self.template_embeddings]
-        
-        # Get top-k indices
-        top_indices = np.argsort(similarities)[-top_k:][::-1]
-        
-        return [SITREP_TEMPLATES[i] for i in top_indices]
+        """Find most similar template(s) using similarity search"""
+        matches = self.vector_store.similarity_search(sitrep_text, k=top_k)
+        return [match.page_content for match in matches]
     
     def extract_status(self, text: str) -> str:
         """Extract status information from the alert summary"""
@@ -82,24 +69,30 @@ class SitrepAnalyzer:
         if status == "No status found":
             return {"status_analysis": "No status information found in the alert summary."}
         
+        system_message = SystemMessagePromptTemplate.from_template(
+            """You are an expert security analyst specializing in status code analysis.
+            Provide precise, technical interpretations of status codes in security contexts."""
+        )
+        
+        human_message = HumanMessagePromptTemplate.from_template(
+            """Analyze this status code in the context of the template:
+            Template: {template}
+            Status: {status}
+            
+            Provide a concise technical analysis including:
+            1. Status code meaning
+            2. Security implications
+            3. Relevance to template
+            
+            Be precise and technical. Max 50 words."""
+        )
+        
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+        
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "You are an expert security analyst specializing in status code analysis."},
-                    {"role": "user", "content": f"""Analyze this status code in the context of the template:
-                    Template: {template}
-                    Status: {status}
-                    
-                    Provide a concise technical analysis including:
-                    1. Status code meaning
-                    2. Security implications
-                    3. Relevance to template
-                    
-                    Be precise and technical. Max 50 words."""}
-                ]
-            )
-            return {"status_analysis": response.choices[0].message.content.strip()}
+            result = chain.run(template=template, status=status)
+            return {"status_analysis": result.strip()}
         except Exception as e:
             return {"error": f"Status analysis error: {str(e)}"}
 
@@ -111,27 +104,113 @@ class SitrepAnalyzer:
         status = self.extract_status(alert_summary)
         status_analysis = self.analyze_status(status, template)
         
+        system_message = SystemMessagePromptTemplate.from_template(
+            """You are an expert security analyst with deep experience in threat detection and incident response.
+            Your task is to analyze security alerts and provide clear, actionable insights.
+            Format your response using markdown headers and bullet points."""
+        )
+        
+        if client_query:
+            human_template = """
+            Context:
+            Template Type: {template}
+            Status: {status}
+            Alert Summary:
+            {alert_summary}
+            
+            Client Query: {query}
+            
+            Provide analysis using this format:
+            
+            ## Query Response
+            
+            ### Direct Answer to Client's Question
+            [Provide direct, clear answer]
+            
+            ### Technical Justification
+            [Provide technical explanation]
+            
+            ### Relevant Context
+            [Provide important contextual information]
+            
+            ## Technical Summary
+            
+            ### Key Findings
+            - [Finding 1]
+            - [Finding 2]
+            - [Finding 3]
+            
+            ### Critical Indicators
+            - [Indicator 1]
+            - [Indicator 2]
+            - [Indicator 3]
+            
+            ## Required Actions
+            
+            ### Immediate Steps
+            - [Step 1]
+            - [Step 2]
+            
+            ### Investigation Points
+            - [Point 1]
+            - [Point 2]
+            - [Point 3]
+            
+            ### Mitigation Measures
+            - [Measure 1]
+            - [Measure 2]
+            - [Measure 3]
+            """
+        else:
+            human_template = """
+            Context:
+            Template Type: {template}
+            Status: {status}
+            Alert Summary:
+            {alert_summary}
+            
+            Provide analysis using this format:
+            
+            ## Technical Summary
+            
+            ### Key Findings
+            - [Finding 1]
+            - [Finding 2]
+            - [Finding 3]
+            
+            ### Critical Indicators
+            - [Indicator 1]
+            - [Indicator 2]
+            - [Indicator 3]
+            
+            ## Required Actions
+            
+            ### Immediate Steps
+            - [Step 1]
+            - [Step 2]
+            
+            ### Investigation Points
+            - [Point 1]
+            - [Point 2]
+            - [Point 3]
+            
+            ### Mitigation Measures
+            - [Measure 1]
+            - [Measure 2]
+            - [Measure 3]
+            """
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        
         try:
-            messages = [
-                {"role": "system", "content": "You are an expert security analyst with deep experience in threat detection and incident response."},
-                {"role": "user", "content": f"""Analyze this security alert:
-                Template Type: {template}
-                Status: {status}
-                Alert Summary: {alert_summary}
-                {f'Client Query: {client_query}' if client_query else ''}
-                
-                Provide a comprehensive analysis including:
-                1. Technical findings
-                2. Critical indicators
-                3. Required actions"""}
-            ]
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=messages
+            chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+            analysis = chain.run(
+                template=template,
+                status=status,
+                alert_summary=alert_summary,
+                query=client_query if client_query else ""
             )
-            
-            analysis = response.choices[0].message.content
             
             return {
                 "template": template,
@@ -217,38 +296,6 @@ def main():
             left: -15px;
             color: #3498db;
         }
-        h2 {
-            font-size: 24px !important;
-            font-weight: bold !important;
-            color: #2c3e50 !important;
-            margin-top: 25px !important;
-            margin-bottom: 15px !important;
-        }
-        h3 {
-            font-size: 20px !important;
-            font-weight: bold !important;
-            color: #34495e !important;
-            margin-top: 20px !important;
-            margin-bottom: 10px !important;
-        }
-        ul {
-            margin-left: 20px !important;
-            margin-bottom: 15px !important;
-        }
-        li {
-            margin-bottom: 8px !important;
-        }
-        .stButton>button {
-            background-color: #2a5298;
-            color: white;
-            border-radius: 5px;
-            padding: 10px 20px;
-            font-weight: bold;
-        }
-        .stTextArea>div>div>textarea {
-            border-radius: 5px;
-            border-color: #e0e0e0;
-        }
         </style>
         """, unsafe_allow_html=True)
     
@@ -300,7 +347,7 @@ def main():
                 
                 # Alert Analysis
                 st.markdown('<p class="section-header">Alert Analysis</p>', unsafe_allow_html=True)
-                st.markdown(result["analysis"], unsafe_allow_html=True)
+                st.markdown(result["analysis"])
                 
                 # Download button
                 combined_analysis = f"""
