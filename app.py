@@ -1,6 +1,4 @@
 import streamlit as st
-import os
-from dotenv import load_dotenv
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
@@ -13,19 +11,10 @@ from langchain.prompts.chat import (
 import openai
 from typing import Dict, Optional, List
 import re
-
-# Load environment variables
-load_dotenv()
+import os
 
 # API Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    try:
-        OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-    except:
-        st.error("OpenAI API key not found. Please set it in .env file or Streamlit secrets.")
-        st.stop()
-
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')  # Get API key from environment variable
 openai.api_key = OPENAI_API_KEY
 
 # Template definitions
