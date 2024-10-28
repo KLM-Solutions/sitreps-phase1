@@ -16,6 +16,7 @@ from typing import Dict, Optional, List
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 openai.api_key = OPENAI_API_KEY
 
+# Template definitions
 SITREP_TEMPLATES = [
     "Anomalous Internal Traffic",
     "445 Blacklisted IP",
@@ -35,9 +36,9 @@ SITREP_TEMPLATES = [
     "Tor IP",
     "Spam IP",
     "NTP TOR IP",
-    "Kerberos-related alert",
     "Malware IP",
     "Anomalous Kerberos Authentication",
+    "Kerberos-related alert",
     "Kerberos Authentication Abuse"
 ]
 
@@ -51,10 +52,32 @@ class CrispResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """You are a security expert providing technical solutions. Give precise, actionable answers without any explanation or context."""
+        system_template = """You are a security expert providing direct, actionable responses.
+    
+        Response Guidelines:
+        1. State the effectiveness of suggested approaches
+        2. Provide alternative or complementary solutions
+        3. Explain briefly why certain approaches are better
+        4. Be specific but avoid customer-specific details
+        5. Focus on industry best practices
+        6. Be direct and concise
+        7. Avoid generic advice
+        
+        Format:
+        - Start with direct answer about suggested approach
+        - List better or complementary solutions if applicable
+        - Include brief technical justification if needed
+        
+        Example Good Response:
+        "IP blocking provides limited protection. Enable SSL/TLS inspection with certificate validation and set threshold alerts for suspicious traffic patterns at 100 requests/minute."
+        
+        Example Bad Response:
+        "You should consider multiple approaches including IP blocking which can help in some cases, and also think about SSL/TLS decryption as it might provide better visibility..."""
 
-        human_template = """Context: {alert_summary}
-        Query: {query}"""
+        human_template = """Alert Context: {alert_summary}
+        Query: {query}
+        
+        Provide direct technical response:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -77,10 +100,38 @@ class PhaseClassifier:
         self.setup_classifier()
 
     def setup_classifier(self):
-        system_template = """Determine if query can be answered with general security knowledge (PHASE_1) or needs specific customer analysis (NOT_PHASE_1)."""
+        system_template = """You are a security query classifier. 
 
-        human_template = """Context: {alert_summary}
-        Query: {query}"""
+        This is PHASE 1 when the query:
+        1. Asks about effectiveness of security measures (like "will IP blocking help?")
+        2. Compares different security approaches (like "is X better than Y?")
+        3. Seeks validation of security practices
+        4. Asks about general mitigation strategies
+        5. Requests best practices
+        6. Asks about thresholds or configurations
+        
+        Remember: Even if query mentions specific security tools (firewall, IPs, SSL/TLS), 
+        it's still Phase 1 if it's asking about general effectiveness or best practices.
+        
+        Examples of PHASE 1 queries:
+        - "Is blocking IPs effective for this?"
+        - "What's better, approach A or B?"
+        - "What threshold should we set?"
+        - "How should we configure this?"
+        - "Is this the best way to handle this?"
+        
+        NOT Phase 1 only if the query:
+        1. Asks to investigate specific incidents
+        2. Requires analysis of customer logs
+        3. Needs specific customer data review
+        4. Asks about specific system behaviors
+
+        Return ONLY "PHASE_1" or "NOT_PHASE_1" """
+
+        human_template = """Alert Context: {alert_summary}
+        Query: {query}
+        
+        Classify if this query can be answered with general security knowledge:"""
         
         self.chain = LLMChain(
             llm=self.llm,
@@ -105,10 +156,24 @@ class TemplateMatcher:
         self.templates = SITREP_TEMPLATES
 
     def setup_matcher(self):
-        system_template = """Match the alert to the most appropriate template name."""
+        system_template = """You are a specialized security alert template matcher focused on exact pattern matching.
+        
+        Key matching criteria:
+        1. Authentication patterns (Kerberos, sign-ins, access)
+        2. Traffic patterns (anomalous, internal, internet)
+        3. IP-based threats (blacklisted, tor, spam, malware)
+        4. Protocol indicators (DNS, TLS, NTP)
+        5. Specific services (bots, scanners, anonymization)
+        
+        Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
 
-        human_template = """Templates: {templates}
-        Alert: {alert_text}"""
+        human_template = """Available Templates:
+        {templates}
+
+        Alert Text:
+        {alert_text}
+
+        Return exact matching template name:"""
         
         self.matcher_chain = LLMChain(
             llm=self.llm,
@@ -201,6 +266,7 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
+                # Show template and status in header box if they exist
                 header_content = []
                 if result["template"] != "Unknown Template":
                     header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
@@ -215,6 +281,7 @@ def main():
                         unsafe_allow_html=True
                     )
                 
+                # Show response if exists
                 if result.get("query_response"):
                     st.markdown(
                         '<div class="response-box">' +
