@@ -1,6 +1,6 @@
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
+from langchain.embeddings import OpenAIEmbeddings 
 from langchain.vectorstores import FAISS
 from langchain.chains import LLMChain
 from langchain.prompts.chat import (
@@ -58,37 +58,46 @@ class SitrepAnalyzer:
         return [match.page_content for match in matches]
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-        """Analyze sitrep and provide concise, focused response"""
+        """Analyze sitrep and provide focused, relevant response"""
         matching_templates = self.find_matching_template(alert_summary)
         template = matching_templates[0] if matching_templates else "Unknown Template"
         
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst. Extract and analyze all relevant fields from the alert summary 
-            (such as status, command line, hash, reputation score, geolocation, network protocol, etc.).
-            Provide extremely concise, technical responses focused exactly on what was asked."""
+            """You are an expert security analyst. Focus only on fields actually present in the alert summary.
+            Do not make assumptions about fields that aren't mentioned.
+            Provide extremely concise, specific responses based solely on the available data.
+            Avoid generic statements or conclusions not directly supported by the alert details.
+            If a specific field is queried but not present in the alert, clearly state its absence."""
         )
         
         if client_query:
             human_template = """
-            Alert Summary:
+            Alert Details:
             {alert_summary}
             
-            Template Type: {template}
+            Query: {query}
             
-            Client Query: {query}
+            Rules:
+            1. Focus only on information explicitly present in the alert
+            2. Do not include generic conclusions or assumptions
+            3. If queried about missing information, state its absence clearly
+            4. Provide direct, specific answers based only on available data
+            5. Include only relevant technical details that directly answer the query
             
-            Provide a direct, concise answer focused specifically on the query, incorporating relevant details 
-            from any fields found in the alert summary. Be brief and technical.
+            Provide a crisp, technical response focusing only on the query and present data.
             """
         else:
             human_template = """
-            Alert Summary:
+            Alert Details:
             {alert_summary}
             
-            Template Type: {template}
+            Rules:
+            1. Focus only on information explicitly present in the alert
+            2. Do not include generic conclusions or assumptions
+            3. Analyze only the fields actually present
+            4. Provide specific technical insights based solely on available data
             
-            Provide a brief technical analysis of the most critical aspects found in the alert summary.
-            Focus on any specific fields or indicators present in the data.
+            Generate a concise analysis focusing only on the most critical present indicators.
             """
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
@@ -97,13 +106,11 @@ class SitrepAnalyzer:
         try:
             chain = LLMChain(llm=self.llm, prompt=chat_prompt)
             analysis = chain.run(
-                template=template,
                 alert_summary=alert_summary,
                 query=client_query if client_query else ""
             )
             
             return {
-                "template": template,
                 "analysis": analysis.strip(),
                 "has_query": bool(client_query)
             }
@@ -117,28 +124,20 @@ def main():
     st.markdown("""
         <style>
         .main-title {
-            font-size: 36px !important;
+            font-size: 32px !important;
             font-weight: bold;
-            background: linear-gradient(45deg, #1e3c72, #2a5298);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            padding: 20px 0;
+            color: #2a5298;
+            padding: 15px 0;
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 20px;
         }
         .analysis-box {
             background-color: #ffffff;
             padding: 20px;
-            border-radius: 10px;
-            border-left: 5px solid #2ecc71;
-            margin: 10px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .template-match {
-            background-color: #e8f4f8;
-            padding: 15px;
             border-radius: 8px;
+            border-left: 4px solid #2a5298;
             margin: 10px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         .stButton>button {
             background-color: #2a5298;
@@ -152,27 +151,27 @@ def main():
     
     analyzer = SitrepAnalyzer()
     
-    st.markdown('<p class="main-title">Sitreps Analysis System</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">Alert Analysis System</p>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
         alert_summary = st.text_area(
-            "Alert Summary",
+            "Alert Details",
             height=300,
-            placeholder="Enter the complete alert summary..."
+            placeholder="Enter the complete alert details..."
         )
 
     with col2:
         client_query = st.text_area(
-            "Client Query (Optional)",
+            "Specific Query (Optional)",
             height=150,
-            placeholder="Enter any specific questions..."
+            placeholder="Enter your specific question..."
         )
     
     if st.button("Analyze", type="primary"):
         if not alert_summary:
-            st.error("Please enter an alert summary to analyze.")
+            st.error("Please enter alert details to analyze.")
             return
         
         with st.spinner("Analyzing..."):
@@ -181,29 +180,15 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
-                st.markdown('<div class="template-match">' +
-                          f'<strong>Template:</strong> {result["template"]}' +
-                          '</div>', unsafe_allow_html=True)
-                
                 st.markdown('<div class="analysis-box">' +
                           f'{result["analysis"]}' +
                           '</div>', unsafe_allow_html=True)
                 
-                combined_analysis = f"""
-                # SITREP ANALYSIS REPORT
-                
-                ## Template
-                {result['template']}
-                
-                ## Analysis
-                {result['analysis']}
-                """
-                
                 st.download_button(
                     label="Download Analysis",
-                    data=combined_analysis,
-                    file_name="sitrep_analysis.md",
-                    mime="text/markdown"
+                    data=result["analysis"],
+                    file_name="alert_analysis.txt",
+                    mime="text/plain"
                 )
 
 if __name__ == "__main__":
