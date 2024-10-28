@@ -52,29 +52,21 @@ class CrispResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """You are a specialized security response system providing highly focused, actionable recommendations.
+        system_template = """You are a security expert providing direct, actionable responses.
 
-        Core Rules:
-        1. Provide critical, directly actionable recommendations
-        2. Focus on high-impact security measures specific to the alert
-        3. Avoid generic advice
-        4. No explanations or justifications
-        5. Each point must be specific and implementable
-        6. Responses must be technically precise
-        7. Use exact numbers/thresholds where applicable
+        Core Guidelines:
+        - Be extremely specific and technical
+        - Provide exact values and thresholds
+        - Focus on immediate, implementable actions
+        - No general advice or explanations
+        - Target response to the exact alert type
 
-        Response Style:
-        • Start each point with an action verb
-        • Include specific technical parameters
-        • Use precise technical terminology
-        • Focus on immediate actions
-        • Provide exact thresholds or ranges
-        • Keep points clear and implementable
-
-        Example Format:
-        • Configure rate limiting to <exact number>
-        • Restrict access to <specific sources>
-        • Enable <specific security control> with <exact parameters>"""
+        Ensure each point is:
+        - Technically precise
+        - Directly actionable
+        - Specific to the situation
+        - Contains exact parameters
+        - Implementation-ready"""
 
         human_template = """Alert Context: {alert_summary}
         Query: {query}
@@ -102,29 +94,25 @@ class PhaseClassifier:
         self.setup_classifier()
 
     def setup_classifier(self):
-        system_template = """You are a query classifier for security operations that determines if a customer query falls under Phase 1 automation scope.
+        system_template = """You are a security query classifier. Determine if a query can be answered with general security knowledge or requires specific customer analysis.
 
-        PHASE 1 QUERIES CRITERIA:
-        - Queries that are general in nature and don't require specific log analysis
-        - Requests for general security guidance or information
-        - Questions about industry-standard best practices
-        - Questions about general mitigation strategies
-        - Inquiries about general security recommendations
-        - Questions about standard steps to prevent security issues
-        - Queries that can be answered using general security knowledge
+        CLASSIFY AS PHASE_1 IF:
+        - Query can be answered with general security knowledge
+        - Query asks for standard recommendations or best practices
+        - Query seeks general guidance or mitigation strategies
+        - Answer doesn't require looking at specific customer data
 
-        NOT PHASE 1 QUERIES (Requires CA Review):
-        - Queries requiring analysis of specific customer logs
-        - Questions about specific technical configurations
-        - Inquiries about specific system behaviors
-        - Questions requiring deep customization
-        - Queries about specific IPs or infrastructure
-        - Anything requiring access to customer-specific data
-        - Technical queries requiring system-specific knowledge
+        CLASSIFY AS NOT_PHASE_1 IF:
+        - Query requires analyzing specific customer data/logs
+        - Query needs specific system knowledge
+        - Query refers to specific customer infrastructure
+        
+        Return ONLY "PHASE_1" or "NOT_PHASE_1" """
 
-        Return ONLY "PHASE_1" if the query can be handled with general security knowledge, or "NOT_PHASE_1" if it requires specific analysis or CA review."""
-
-        human_template = """Query: {query}"""
+        human_template = """Alert Summary: {alert_summary}
+        Query: {query}
+        
+        Is this a Phase 1 query?"""
         
         self.chain = LLMChain(
             llm=self.llm,
@@ -134,8 +122,8 @@ class PhaseClassifier:
             ])
         )
 
-    def classify(self, query: str) -> bool:
-        result = self.chain.run(query=query).strip()
+    def classify(self, alert_summary: str, query: str) -> bool:
+        result = self.chain.run(alert_summary=alert_summary, query=query).strip()
         return result == "PHASE_1"
 
 class TemplateMatcher:
@@ -202,7 +190,7 @@ class SitrepAnalyzer:
             is_phase_1 = False
             
             if client_query:
-                is_phase_1 = self.phase_classifier.classify(client_query)
+                is_phase_1 = self.phase_classifier.classify(alert_summary, client_query)
                 if is_phase_1:
                     query_response = self.response_generator.generate(alert_summary, client_query)
                 else:
