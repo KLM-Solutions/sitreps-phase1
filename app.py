@@ -61,8 +61,8 @@ class SitrepAnalyzer:
         return status_match.group(1).strip() if status_match else None
     
     def answer_query(self, alert_summary: str, query: str) -> str:
-    system_message = SystemMessagePromptTemplate.from_template(
-        """You are a security analyst providing new insights only.
+        """Generate a focused response to the user query"""
+        system_template = """You are a security analyst providing new insights only.
         Critical Rules:
         - NEVER repeat any information that's directly stated in the alert details
         - NEVER mention monitoring accounts or events that are already listed
@@ -73,27 +73,27 @@ class SitrepAnalyzer:
         - Consider baseline of X requests per hour
         - Alert on Y% increase over Z time period
         For actionable items, only provide new actions not mentioned in the alert"""
-    )
-    
-    human_template = """
-    Alert Summary:
-    {alert_summary}
-    
-    Query: {query}
-    
-    Rules:
-    1. Do NOT repeat what's in the alert
-    2. Provide ONLY new information not present in the alert
-    3. Give specific numbers for thresholds where applicable
-    4. Focus on actionable insights not already mentioned
-    5. If the answer would repeat alert info, instead say "Based on additional analysis..." and provide new insights
-    """
-    
-    human_message = HumanMessagePromptTemplate.from_template(human_template)
-    chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-    
-    chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-    return chain.run(alert_summary=alert_summary, query=query)
+        
+        system_message = SystemMessagePromptTemplate.from_template(system_template)
+        
+        human_template = """
+        Alert Summary:
+        {alert_summary}
+        
+        Query: {query}
+        
+        Rules:
+        1. Do NOT repeat what's in the alert
+        2. Provide ONLY new information not present in the alert
+        3. Give specific numbers for thresholds where applicable
+        4. Focus on actionable insights not already mentioned
+        5. If the answer would repeat alert info, instead say "Based on additional analysis..." and provide new insights"""
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        
+        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+        return chain.run(alert_summary=alert_summary, query=query)
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
