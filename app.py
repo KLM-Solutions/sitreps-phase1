@@ -51,16 +51,15 @@ class SitrepAnalyzer:
     def setup_vector_store(self):
         self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
     
-    def find_matching_template(self, sitrep_text: str, top_k: int = 1) -> List[str]:
-        matches = self.vector_store.similarity_search(sitrep_text, k=top_k)
-        return [match.page_content for match in matches]
+    def find_matching_template(self, sitrep_text: str) -> str:
+        matches = self.vector_store.similarity_search(sitrep_text, k=1)
+        return matches[0].page_content if matches else "Unknown Template"
 
-    def generate_alert_analysis(self, alert_summary: str) -> str:
-        """Generate general alert analysis"""
+    def generate_analysis(self, alert_summary: str) -> str:
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst. Analyze the alert summary and extract critical information.
-            Only mention status if explicitly present in the alert.
-            Focus on technical details and avoid generic statements."""
+            """You are a security analyst. Provide a crisp technical analysis.
+            
+            """
         )
         
         human_template = """
@@ -68,12 +67,10 @@ class SitrepAnalyzer:
         {alert_summary}
         
         Rules:
-        1. Only mention status if explicitly present
-        2. Focus on concrete technical details
-        3. Identify specific indicators and patterns
-        4. Provide clear, specific insights
-        
-        Generate a concise technical analysis.
+        1. Only include status if explicitly present
+        2. Keep response to 1-2 key technical points
+        3. Be specific and concise
+        4. Focus on critical technical details only
         """
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
@@ -83,27 +80,22 @@ class SitrepAnalyzer:
         return chain.run(alert_summary=alert_summary)
 
     def answer_query(self, alert_summary: str, query: str) -> str:
-        """Generate focused response to user query"""
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst. 
-            Provide a direct, specific answer to the user's query based on the alert details.
-            Focus only on information relevant to the query."""
+            """You are a security analyst. Provide a direct answer to the query.
+            Keep response focused and brief."""
         )
         
         human_template = """
         Alert Summary:
         {alert_summary}
         
-        User Query:
-        {query}
+        Query: {query}
         
         Rules:
         1. Answer only what was asked
-        2. Use only information present in the alert
-        3. Be clear and specific
-        4. Keep the response concise
-        
-        Provide a focused answer to the query.
+        2. Use only information from the alert
+        3. In summary analysis there is any status code, if is it present then it should show the heading and show , if any code is not mentioned then it should not show about the status section.
+        4. Keep response full if needed, and don't give the irrelevent answer and should not provide the any dates or code that present in summary, just give pure responce.
         """
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
@@ -113,53 +105,31 @@ class SitrepAnalyzer:
         return chain.run(alert_summary=alert_summary, query=query)
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-        """Complete analysis pipeline"""
         try:
-            # Generate base analysis
-            alert_analysis = self.generate_alert_analysis(alert_summary)
+            template = self.find_matching_template(alert_summary)
+            analysis = self.generate_analysis(alert_summary)
             
-            # Generate query response if query exists
             query_response = None
             if client_query:
                 query_response = self.answer_query(alert_summary, client_query)
             
             return {
-                "alert_analysis": alert_analysis.strip(),
-                "query_response": query_response.strip() if query_response else None,
-                "has_query": bool(client_query)
+                "template": template,
+                "analysis": analysis.strip(),
+                "query_response": query_response.strip() if query_response else None
             }
         except Exception as e:
-            return {"error": f"Error generating analysis: {str(e)}"}
+            return {"error": f"Error: {str(e)}"}
 
 def main():
-    st.set_page_config(page_title="Sitreps Analyzer", layout="wide")
+    st.set_page_config(page_title="Alert Analyzer", layout="wide")
     
-    # Styling
     st.markdown("""
         <style>
-        .main-title {
-            font-size: 32px !important;
-            font-weight: bold;
-            color: #2a5298;
-            padding: 15px 0;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .analysis-box {
-            background-color: #ffffff;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #2a5298;
-            margin: 10px 0;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .query-response {
-            background-color: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #28a745;
-            margin: 10px 0;
-        }
+        .main-title { color: #2a5298; font-size: 24px; font-weight: bold; margin: 20px 0; }
+        .analysis-box { background: white; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .template { color: #2a5298; font-weight: bold; margin: 5px 0; }
+        .query-response { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
         </style>
         """, unsafe_allow_html=True)
     
@@ -170,22 +140,14 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        alert_summary = st.text_area(
-            "Alert Details",
-            height=300,
-            placeholder="Enter the complete alert details..."
-        )
+        alert_summary = st.text_area("Alert Details", height=300)
 
     with col2:
-        client_query = st.text_area(
-            "Your Query",
-            height=150,
-            placeholder="What would you like to know about this alert?"
-        )
+        client_query = st.text_area("Query (Optional)", height=150)
     
     if st.button("Analyze", type="primary"):
         if not alert_summary:
-            st.error("Please enter alert details to analyze.")
+            st.error("Please enter alert details.")
             return
         
         with st.spinner("Analyzing..."):
@@ -194,29 +156,35 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
-                st.markdown('<div class="analysis-box">' +
-                          f'<strong>Alert Analysis:</strong><br>{result["alert_analysis"]}' +
+                # Display matched template
+                st.markdown(f'<p class="template">Matched Template: {result["template"]}</p>', 
+                          unsafe_allow_html=True)
+                
+                # Display technical analysis
+                st.markdown('<div class="analysis-box">' + 
+                          f'{result["analysis"]}' + 
                           '</div>', unsafe_allow_html=True)
                 
-                if result["has_query"] and result["query_response"]:
+                # Display query response if exists
+                if result["query_response"]:
                     st.markdown('<div class="query-response">' +
                               f'<strong>Query Response:</strong><br>{result["query_response"]}' +
                               '</div>', unsafe_allow_html=True)
                 
-                combined_analysis = f"""
-                # Alert Analysis Report
+                # Download button
+                analysis_text = f"""
+                Matched Template: {result["template"]}
                 
-                ## General Analysis
-                {result["alert_analysis"]}
+                {result["analysis"]}
                 
-                {f"## Query Response\n{result['query_response']}" if result["query_response"] else ""}
+                {f"Query Response:\n{result['query_response']}" if result["query_response"] else ""}
                 """
                 
                 st.download_button(
                     label="Download Analysis",
-                    data=combined_analysis,
-                    file_name="alert_analysis.md",
-                    mime="text/markdown"
+                    data=analysis_text,
+                    file_name="analysis.txt",
+                    mime="text/plain"
                 )
 
 if __name__ == "__main__":
