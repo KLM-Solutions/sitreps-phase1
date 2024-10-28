@@ -61,36 +61,41 @@ class SitrepAnalyzer:
         return status_match.group(1).strip() if status_match else None
 
     def answer_query(self, alert_summary: str, query: str) -> str:
-        system_message = SystemMessagePromptTemplate.from_template(
-            """You are a security analyst. Your task is to provide new, relevant insights for the query.
-            Important rules:
-            - Do NOT repeat information that's already directly stated in the alert summary
-            - Provide fresh insights and actionable recommendations
-            - Focus on what's not already mentioned but relevant to the query
-            - If the query only asks about information already present in the alert, indicate that and provide additional valuable context
-            """
-        )
-        
-        human_template = """
-        Alert Summary:
-        {alert_summary}
-        
-        Query: {query}
-        
-        Rules for response:
-        1. Never repeat information that's explicitly stated in the alert summary
-        2. If the query asks for information that's directly visible in the summary, provide new relevant insights instead
-        3. Keep responses focused on new, actionable information
-        4. For threshold or metric questions, provide specific recommendations not mentioned in the summary
-        5. If everything about the query is already in the summary, provide additional context or implications
-        6. Focus on what should be done with the information rather than restating it
+    system_message = SystemMessagePromptTemplate.from_template(
+        """You are a security analyst providing direct answers to security alert queries.
+        Rules:
+        - Start with 'User Query:' followed by the actual query
+        - Provide direct, concise answers without repeating alert content
+        - No general recommendations unless specifically asked
+        - Focus only on what was asked
+        - Avoid listing multiple steps/recommendations unless explicitly requested
+        - Keep response brief and focused
         """
-        
-        human_message = HumanMessagePromptTemplate.from_template(human_template)
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-        
-        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-        return chain.run(alert_summary=alert_summary, query=query)
+    )
+    
+    human_template = """
+    Alert Summary:
+    {alert_summary}
+    
+    Query: {query}
+    
+    Provide a direct answer that:
+    1. Does not repeat information already in the alert
+    2. Addresses only what was asked
+    3. Is brief and focused
+    4. Avoids generic security advice
+    5. Only gives recommendations if specifically requested
+    """
+    
+    human_message = HumanMessagePromptTemplate.from_template(human_template)
+    chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+    
+    chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+    response = chain.run(alert_summary=alert_summary, query=query)
+    
+    # Format the response with the query as heading
+    formatted_response = f"User Query: {query}\n\n{response}"
+    return formatted_response
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
