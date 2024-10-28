@@ -69,10 +69,8 @@ class SitrepAnalyzer:
         - NEVER restate the alert findings
         - Instead, provide specific new insights or thresholds not mentioned in the alert
         - Focus on concrete numerical thresholds or specific actions not already covered
-        For threshold questions, provide specific numbers like:
-        - Consider baseline of X requests per hour
-        - Alert on Y% increase over Z time period
-        For actionable items, only provide new actions not mentioned in the alert"""
+        - Do not include any headers or labels in your response
+        - Provide a direct, concise response without repeating the query"""
         
         system_message = SystemMessagePromptTemplate.from_template(system_template)
         
@@ -87,7 +85,7 @@ class SitrepAnalyzer:
         2. Provide ONLY new information not present in the alert
         3. Give specific numbers for thresholds where applicable
         4. Focus on actionable insights not already mentioned
-        5. If the answer would repeat alert info, instead say "Based on additional analysis..." and provide new insights"""
+        5. Make the response direct and concise"""
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
         chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
@@ -181,7 +179,6 @@ def main():
                 # Display query response if exists
                 if result["query_response"]:
                     st.markdown('<div class="query-response">' +
-                              f'<strong>User Query:</strong><br>{client_query}<br><br>' +
                               f'{result["query_response"]}' +
                               '</div>', unsafe_allow_html=True)
 
