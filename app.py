@@ -9,6 +9,7 @@ from langchain.prompts.chat import (
     HumanMessagePromptTemplate
 )
 import openai
+import re
 from typing import Dict, Optional, List
 
 # API Configuration
