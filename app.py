@@ -70,7 +70,8 @@ class SitrepAnalyzer:
         - Instead, provide specific new insights or thresholds not mentioned in the alert
         - Focus on concrete numerical thresholds or specific actions not already covered
         - Do not include any headers or labels in your response
-        - Provide a direct, concise response without repeating the query"""
+        - Provide a direct, concise response without any preamble
+        - Do not include phrases like 'Based on the alert' or 'The alert shows'"""
         
         system_message = SystemMessagePromptTemplate.from_template(system_template)
         
@@ -85,7 +86,8 @@ class SitrepAnalyzer:
         2. Provide ONLY new information not present in the alert
         3. Give specific numbers for thresholds where applicable
         4. Focus on actionable insights not already mentioned
-        5. Make the response direct and concise"""
+        5. Make the response direct and concise
+        6. Do not reference the alert or query in your response"""
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
         chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
@@ -136,6 +138,12 @@ def main():
             margin: 10px 0;
             border-left: 4px solid #3498db;
         }
+        .response-heading {
+            color: #2a5298;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
         .stButton>button {
             background-color: #2a5298;
             color: white;
@@ -179,6 +187,7 @@ def main():
                 # Display query response if exists
                 if result["query_response"]:
                     st.markdown('<div class="query-response">' +
+                              '<div class="response-heading">USER RESPONSE:</div>' +
                               f'{result["query_response"]}' +
                               '</div>', unsafe_allow_html=True)
 
