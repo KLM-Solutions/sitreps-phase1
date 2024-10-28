@@ -33,11 +33,11 @@ SITREP_TEMPLATES = [
     "TLS Traffic to bad domains",
     "Gradient 365 alert: Sign-in from a Blacklisted IP detected",
     "Social Engineering",
+    "Kerberos-related alert",
     "Tor IP",
     "Spam IP",
     "NTP TOR IP",
     "Malware IP",
-    "Kerberos-related alert",
     "Anomalous Kerberos Authentication",
     "Kerberos Authentication Abuse"
 ]
@@ -53,25 +53,31 @@ class CrispResponseGenerator:
 
     def setup_chain(self):
         system_template = """You are a security expert providing direct, actionable responses.
-
-        Core Guidelines:
-        - Be extremely specific and technical
-        - Provide exact values and thresholds
-        - Focus on immediate, implementable actions
-        - No general advice or explanations
-        - Target response to the exact alert type
-
-        Ensure each point is:
-        - Technically precise
-        - Directly actionable
-        - Specific to the situation
-        - Contains exact parameters
-        - Implementation-ready"""
+    
+        Response Guidelines:
+        1. State the effectiveness of suggested approaches
+        2. Provide alternative or complementary solutions
+        3. Explain briefly why certain approaches are better
+        4. Be specific but avoid customer-specific details
+        5. Focus on industry best practices
+        6. Be direct and concise
+        7. Avoid generic advice
+        
+        Format:
+        - Start with direct answer about suggested approach
+        - List better or complementary solutions if applicable
+        - Include brief technical justification if needed
+        
+        Example Good Response:
+        "IP blocking provides limited protection. Enable SSL/TLS inspection with certificate validation and set threshold alerts for suspicious traffic patterns at 100 requests/minute."
+        
+        Example Bad Response:
+        "You should consider multiple approaches including IP blocking which can help in some cases, and also think about SSL/TLS decryption as it might provide better visibility..."""
 
         human_template = """Alert Context: {alert_summary}
         Query: {query}
         
-        Provide precise technical response:"""
+        Provide direct technical response:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -94,25 +100,38 @@ class PhaseClassifier:
         self.setup_classifier()
 
     def setup_classifier(self):
-        system_template = """You are a security query classifier. Determine if a query can be answered with general security knowledge or requires specific customer analysis.
+        system_template = """You are a security query classifier. 
 
-        CLASSIFY AS PHASE_1 IF:
-        - Query can be answered with general security knowledge
-        - Query asks for standard recommendations or best practices
-        - Query seeks general guidance or mitigation strategies
-        - Answer doesn't require looking at specific customer data
-
-        CLASSIFY AS NOT_PHASE_1 IF:
-        - Query requires analyzing specific customer data/logs
-        - Query needs specific system knowledge
-        - Query refers to specific customer infrastructure
+        This is PHASE 1 when the query:
+        1. Asks about effectiveness of security measures (like "will IP blocking help?")
+        2. Compares different security approaches (like "is X better than Y?")
+        3. Seeks validation of security practices
+        4. Asks about general mitigation strategies
+        5. Requests best practices
+        6. Asks about thresholds or configurations
         
+        Remember: Even if query mentions specific security tools (firewall, IPs, SSL/TLS), 
+        it's still Phase 1 if it's asking about general effectiveness or best practices.
+        
+        Examples of PHASE 1 queries:
+        - "Is blocking IPs effective for this?"
+        - "What's better, approach A or B?"
+        - "What threshold should we set?"
+        - "How should we configure this?"
+        - "Is this the best way to handle this?"
+        
+        NOT Phase 1 only if the query:
+        1. Asks to investigate specific incidents
+        2. Requires analysis of customer logs
+        3. Needs specific customer data review
+        4. Asks about specific system behaviors
+
         Return ONLY "PHASE_1" or "NOT_PHASE_1" """
 
-        human_template = """Alert Summary: {alert_summary}
+        human_template = """Alert Context: {alert_summary}
         Query: {query}
         
-        Is this a Phase 1 query?"""
+        Classify if this query can be answered with general security knowledge:"""
         
         self.chain = LLMChain(
             llm=self.llm,
