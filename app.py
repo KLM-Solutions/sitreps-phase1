@@ -16,7 +16,7 @@ from typing import Dict, Optional, List
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 openai.api_key = OPENAI_API_KEY
 
-# Template definitions including Kerberos
+# Template definitions
 SITREP_TEMPLATES = [
     "Anomalous Internal Traffic",
     "445 Blacklisted IP",
@@ -36,8 +36,8 @@ SITREP_TEMPLATES = [
     "Tor IP",
     "Spam IP",
     "NTP TOR IP",
-    "Kerberos-related alert",
     "Malware IP",
+    "Kerberos-related alert",
     "Anomalous Kerberos Authentication",
     "Kerberos Authentication Abuse"
 ]
@@ -52,16 +52,34 @@ class CrispResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """Generate clear, direct security responses.
-        - Be extremely concise
-        - Focus on actionable items
-        - No explanations or context
-        - Use bullet points for multiple items
-        - Skip any introductory phrases"""
+        system_template = """You are a specialized security response system providing highly focused, actionable recommendations.
 
-        human_template = """Context: {alert_summary}
+        Core Rules:
+        1. Provide critical, directly actionable recommendations
+        2. Focus on high-impact security measures specific to the alert
+        3. Avoid generic advice
+        4. No explanations or justifications
+        5. Each point must be specific and implementable
+        6. Responses must be technically precise
+        7. Use exact numbers/thresholds where applicable
+
+        Response Style:
+        • Start each point with an action verb
+        • Include specific technical parameters
+        • Use precise technical terminology
+        • Focus on immediate actions
+        • Provide exact thresholds or ranges
+        • Keep points clear and implementable
+
+        Example Format:
+        • Configure rate limiting to <exact number>
+        • Restrict access to <specific sources>
+        • Enable <specific security control> with <exact parameters>"""
+
+        human_template = """Alert Context: {alert_summary}
         Query: {query}
-        Provide direct response:"""
+        
+        Provide precise technical response:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -73,43 +91,6 @@ class CrispResponseGenerator:
 
     def generate(self, alert_summary: str, query: str) -> str:
         return self.chain.run(alert_summary=alert_summary, query=query).strip()
-
-class TemplateMatcher:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_matcher()
-        self.templates = SITREP_TEMPLATES
-
-    def setup_matcher(self):
-        system_template = """Match alerts to exact template names. Consider:
-        - Authentication patterns
-        - Traffic patterns
-        - Threat types
-        - Protocol indicators
-        Return ONLY the exact template name."""
-
-        human_template = """Templates: {templates}
-        Alert: {alert_text}
-        Match to template:"""
-        
-        self.matcher_chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def match_template(self, alert_text: str) -> str:
-        result = self.matcher_chain.run(
-            templates="\n".join(self.templates),
-            alert_text=alert_text
-        ).strip()
-        return result if result in self.templates else "Unknown Template"
 
 class PhaseClassifier:
     def __init__(self, openai_api_key: str):
@@ -159,6 +140,39 @@ class PhaseClassifier:
         result = self.chain.run(query=query).strip()
         return result == "PHASE_1"
 
+class TemplateMatcher:
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.setup_matcher()
+        self.templates = SITREP_TEMPLATES
+
+    def setup_matcher(self):
+        system_template = """Match alerts to exact template names based on technical indicators and context.
+        Return ONLY the exact template name."""
+
+        human_template = """Templates: {templates}
+        Alert: {alert_text}
+        Match to template:"""
+        
+        self.matcher_chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def match_template(self, alert_text: str) -> str:
+        result = self.matcher_chain.run(
+            templates="\n".join(self.templates),
+            alert_text=alert_text
+        ).strip()
+        return result if result in self.templates else "Unknown Template"
+
 class SitrepAnalyzer:
     def __init__(self):
         self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
@@ -198,12 +212,15 @@ def main():
     
     st.markdown("""
         <style>
-        .main-title { color: #2a5298; font-size: 24px; font-weight: bold; text-align: center; }
-        .response-box { background: white; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #3498db; }
+        .response-box { 
+            background: white; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 10px 0; 
+            border-left: 4px solid #3498db; 
+        }
         </style>
         """, unsafe_allow_html=True)
-    
-    st.markdown('<h1 class="main-title">Sitreps Analysis System</h1>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([2, 1])
     
@@ -225,10 +242,6 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
-                st.markdown(f"**Matched Template:** {result['template']}")
-                if result["status"]:
-                    st.markdown(f"**Status:** {result['status']}")
-                
                 if result.get("query_response"):
                     st.markdown('<div class="response-box">' +
                               '<strong>USER RESPONSE:</strong><br>' +
