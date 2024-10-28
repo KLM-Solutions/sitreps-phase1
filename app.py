@@ -156,7 +156,7 @@ def main():
     
     analyzer = SitrepAnalyzer()
     
-    st.markdown('<p class="main-title">Alert Analysis System</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-title">Sitreps Analysis System</p>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([2, 1])
     
