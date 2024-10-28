@@ -35,6 +35,7 @@ SITREP_TEMPLATES = [
     "Social Engineering",
     "Tor IP",
     "Spam IP",
+    "Kerberos-related alert",
     "NTP TOR IP",
     "Malware IP"
 ]
