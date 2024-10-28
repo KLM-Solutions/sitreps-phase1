@@ -16,7 +16,7 @@ from typing import Dict, Optional, List
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 openai.api_key = OPENAI_API_KEY
 
-# Updated templates including Kerberos
+# Template definitions including Kerberos
 SITREP_TEMPLATES = [
     "Anomalous Internal Traffic",
     "445 Blacklisted IP",
@@ -36,8 +36,8 @@ SITREP_TEMPLATES = [
     "Tor IP",
     "Spam IP",
     "NTP TOR IP",
-    "Malware IP",
     "Kerberos-related alert",
+    "Malware IP",
     "Anomalous Kerberos Authentication",
     "Kerberos Authentication Abuse"
 ]
@@ -52,18 +52,16 @@ class CrispResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """You are a security analyst generating extremely concise responses.
-        Key Rules:
-        - Be direct and specific
+        system_template = """Generate clear, direct security responses.
+        - Be extremely concise
+        - Focus on actionable items
         - No explanations or context
-        - No technical details unless asked
-        - Bullet points for multiple items
-        - Just provide the answer, no introductions
-        If query needs customer-specific analysis, respond: "⚠️ Requires analyst review - beyond Phase 1 automation scope." """
+        - Use bullet points for multiple items
+        - Skip any introductory phrases"""
 
-        human_template = """Alert: {alert_summary}
+        human_template = """Context: {alert_summary}
         Query: {query}
-        Provide crisp response:"""
+        Provide direct response:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -88,10 +86,10 @@ class TemplateMatcher:
 
     def setup_matcher(self):
         system_template = """Match alerts to exact template names. Consider:
-        - Authentication patterns (Kerberos, sign-ins)
-        - Traffic patterns (anomalous, internal)
-        - Threat types (malware, spam)
-        - Protocol indicators (DNS, TLS, NTP)
+        - Authentication patterns
+        - Traffic patterns
+        - Threat types
+        - Protocol indicators
         Return ONLY the exact template name."""
 
         human_template = """Templates: {templates}
@@ -123,12 +121,31 @@ class PhaseClassifier:
         self.setup_classifier()
 
     def setup_classifier(self):
-        system_template = """Classify if query is Phase 1 (general security questions) or not.
-        Phase 1: best practices, general mitigations, recommendations
-        Not Phase 1: customer-specific analysis, technical details
-        Return ONLY "PHASE_1" or "NOT_PHASE_1"."""
+        system_template = """You are a query classifier for security operations that determines if a customer query falls under Phase 1 automation scope.
+
+        PHASE 1 QUERIES CRITERIA:
+        - Queries that are general in nature and don't require specific log analysis
+        - Requests for general security guidance or information
+        - Questions about industry-standard best practices
+        - Questions about general mitigation strategies
+        - Inquiries about general security recommendations
+        - Questions about standard steps to prevent security issues
+        - Queries that can be answered using general security knowledge
+
+        NOT PHASE 1 QUERIES (Requires CA Review):
+        - Queries requiring analysis of specific customer logs
+        - Questions about specific technical configurations
+        - Inquiries about specific system behaviors
+        - Questions requiring deep customization
+        - Queries about specific IPs or infrastructure
+        - Anything requiring access to customer-specific data
+        - Technical queries requiring system-specific knowledge
+
+        Return ONLY "PHASE_1" if the query can be handled with general security knowledge, or "NOT_PHASE_1" if it requires specific analysis or CA review."""
+
+        human_template = """Query: {query}
         
-        human_template = "Query: {query}"
+        Based ONLY on whether this query needs specific customer analysis or can be answered with general security knowledge, classify as PHASE_1 or NOT_PHASE_1."""
         
         self.chain = LLMChain(
             llm=self.llm,
