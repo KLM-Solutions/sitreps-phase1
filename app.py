@@ -55,22 +55,24 @@ class SitrepAnalyzer:
         matches = self.vector_store.similarity_search(sitrep_text, k=1)
         return matches[0].page_content if matches else "Unknown Template"
 
+    def extract_status(self, text: str) -> Optional[str]:
+        """Extract status if present in the alert"""
+        status_match = re.search(r"Status:([^\n]*)", text, re.IGNORECASE)
+        return status_match.group(1).strip() if status_match else None
+
     def generate_analysis(self, alert_summary: str) -> str:
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are a security analyst. Provide a crisp technical analysis.
-            
-            """
+            """You are a security analyst. Provide only the most critical technical insights.
+            Focus on immediate security implications."""
         )
         
         human_template = """
         Alert Summary:
         {alert_summary}
         
-        Rules:
-        1. Only include status if explicitly present
-        2. Keep response to 1-2 key technical points
-        3. Be specific and concise
-        4. Focus on critical technical details only
+        Provide a brief technical analysis focusing only on the key security implications.
+        Do not include any dates, event IDs, or technical codes in your response.
+        Focus on the security impact and risk.
         """
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
@@ -81,8 +83,9 @@ class SitrepAnalyzer:
 
     def answer_query(self, alert_summary: str, query: str) -> str:
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are a security analyst. Provide a direct answer to the query.
-            Keep response focused and brief."""
+            """You are a security analyst. Your task is to provide a detailed but focused answer 
+            to the specific query. Include all relevant details but avoid generic security advice 
+            unless specifically asked."""
         )
         
         human_template = """
@@ -92,10 +95,14 @@ class SitrepAnalyzer:
         Query: {query}
         
         Rules:
-        1. Answer only what was asked
-        2. Use only information from the alert
-        3. In summary analysis there is any status code, if is it present then it should show the heading and show , if any code is not mentioned then it should not show about the status section.
-        4. Keep response full if needed, and don't give the irrelevent answer and should not provide the any dates or code that present in summary, just give pure responce.
+        1. Address the specific query directly and completely
+        2. Include all relevant technical details from the alert
+        3. Do not include generic security advice unless specifically asked
+        4. Avoid mentioning dates, event IDs, or specific codes
+        5. If discussing thresholds or metrics, provide specific recommendations
+        6. Focus on actionable insights directly related to the query
+        
+        Provide a comprehensive but focused response that directly answers the query.
         """
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
@@ -107,6 +114,7 @@ class SitrepAnalyzer:
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
             template = self.find_matching_template(alert_summary)
+            status = self.extract_status(alert_summary)
             analysis = self.generate_analysis(alert_summary)
             
             query_response = None
@@ -115,6 +123,7 @@ class SitrepAnalyzer:
             
             return {
                 "template": template,
+                "status": status,
                 "analysis": analysis.strip(),
                 "query_response": query_response.strip() if query_response else None
             }
@@ -127,9 +136,27 @@ def main():
     st.markdown("""
         <style>
         .main-title { color: #2a5298; font-size: 24px; font-weight: bold; margin: 20px 0; }
-        .analysis-box { background: white; padding: 15px; border-radius: 5px; margin: 10px 0; }
-        .template { color: #2a5298; font-weight: bold; margin: 5px 0; }
-        .query-response { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .header-box { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 10px 0;
+            border-left: 4px solid #2a5298;
+        }
+        .analysis-box { 
+            background: white; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 10px 0;
+            border-left: 4px solid #2ecc71;
+        }
+        .query-response { 
+            background: #fff; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 10px 0;
+            border-left: 4px solid #3498db;
+        }
         </style>
         """, unsafe_allow_html=True)
     
@@ -156,13 +183,16 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
-                # Display matched template
-                st.markdown(f'<p class="template">Matched Template: {result["template"]}</p>', 
-                          unsafe_allow_html=True)
+                # Display header information
+                header_html = f'<div class="header-box"><strong>Matched Template:</strong> {result["template"]}'
+                if result["status"]:
+                    header_html += f'<br><strong>Status:</strong> {result["status"]}'
+                header_html += '</div>'
+                st.markdown(header_html, unsafe_allow_html=True)
                 
                 # Display technical analysis
                 st.markdown('<div class="analysis-box">' + 
-                          f'{result["analysis"]}' + 
+                          f'<strong>Technical Analysis:</strong><br>{result["analysis"]}' + 
                           '</div>', unsafe_allow_html=True)
                 
                 # Display query response if exists
@@ -171,14 +201,17 @@ def main():
                               f'<strong>Query Response:</strong><br>{result["query_response"]}' +
                               '</div>', unsafe_allow_html=True)
                 
-                # Download button
-                analysis_text = f"""
-                Matched Template: {result["template"]}
-                
-                {result["analysis"]}
-                
-                {f"Query Response:\n{result['query_response']}" if result["query_response"] else ""}
-                """
+                # Download button with formatted content
+                analysis_text = f"""# Alert Analysis Report
+
+Matched Template: {result["template"]}
+{f'Status: {result["status"]}' if result["status"] else ''}
+
+Technical Analysis:
+{result["analysis"]}
+
+{f'Query Response:\n{result["query_response"]}' if result["query_response"] else ''}
+"""
                 
                 st.download_button(
                     label="Download Analysis",
