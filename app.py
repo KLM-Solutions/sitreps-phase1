@@ -86,7 +86,7 @@ class SitrepAnalyzer:
         2. Provide ONLY new information not present in the alert
         3. Give specific numbers for thresholds where applicable
         4. Focus on actionable insights not already mentioned
-        5. Make the response direct and concise
+        5. Make the response direct and concise and more crisp
         6. Do not reference the alert or query in your response"""
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
