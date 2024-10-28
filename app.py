@@ -124,9 +124,7 @@ class PhaseClassifier:
 
         Return ONLY "PHASE_1" if the query can be handled with general security knowledge, or "NOT_PHASE_1" if it requires specific analysis or CA review."""
 
-        human_template = """Query: {query}
-        
-        Based ONLY on whether this query needs specific customer analysis or can be answered with general security knowledge, classify as PHASE_1 or NOT_PHASE_1."""
+        human_template = """Query: {query}"""
         
         self.chain = LLMChain(
             llm=self.llm,
@@ -151,12 +149,24 @@ class TemplateMatcher:
         self.templates = SITREP_TEMPLATES
 
     def setup_matcher(self):
-        system_template = """Match alerts to exact template names based on technical indicators and context.
-        Return ONLY the exact template name."""
+        system_template = """You are a specialized security alert template matcher focused on exact pattern matching.
+        
+        Key matching criteria:
+        1. Authentication patterns (Kerberos, sign-ins, access)
+        2. Traffic patterns (anomalous, internal, internet)
+        3. IP-based threats (blacklisted, tor, spam, malware)
+        4. Protocol indicators (DNS, TLS, NTP)
+        5. Specific services (bots, scanners, anonymization)
+        
+        Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
 
-        human_template = """Templates: {templates}
-        Alert: {alert_text}
-        Match to template:"""
+        human_template = """Available Templates:
+        {templates}
+
+        Alert Text:
+        {alert_text}
+
+        Return exact matching template name:"""
         
         self.matcher_chain = LLMChain(
             llm=self.llm,
@@ -212,6 +222,13 @@ def main():
     
     st.markdown("""
         <style>
+        .header-box { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin: 10px 0;
+            border-left: 4px solid #2a5298;
+        }
         .response-box { 
             background: white; 
             padding: 15px; 
@@ -242,11 +259,30 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
+                # Show template and status in header box if they exist
+                header_content = []
+                if result["template"] != "Unknown Template":
+                    header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
+                if result.get("status"):
+                    header_content.append(f"<strong>Status:</strong> {result['status']}")
+                
+                if header_content:
+                    st.markdown(
+                        '<div class="header-box">' + 
+                        '<br>'.join(header_content) + 
+                        '</div>', 
+                        unsafe_allow_html=True
+                    )
+                
+                # Show response if exists
                 if result.get("query_response"):
-                    st.markdown('<div class="response-box">' +
-                              '<strong>USER RESPONSE:</strong><br>' +
-                              f'{result["query_response"]}' +
-                              '</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        '<div class="response-box">' +
+                        '<strong>USER RESPONSE:</strong><br>' +
+                        f'{result["query_response"]}' +
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
 
 if __name__ == "__main__":
     main()
