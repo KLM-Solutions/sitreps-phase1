@@ -161,10 +161,10 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        alert_summary = st.text_area("Alert Details", height=300)
+        alert_summary = st.text_area("Summary Analysis ", height=300)
 
     with col2:
-        client_query = st.text_area("Query", height=150)
+        client_query = st.text_area("User Query", height=150)
     
     if st.button("Analyze", type="primary"):
         if not alert_summary:
