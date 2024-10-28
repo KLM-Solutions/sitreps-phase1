@@ -58,149 +58,100 @@ class SitrepAnalyzer:
         matches = self.vector_store.similarity_search(sitrep_text, k=top_k)
         return [match.page_content for match in matches]
     
-    def extract_status(self, text: str) -> str:
-        """Extract status information from the alert summary"""
-        status_match = re.search(r"Status:([^\n]*)", text, re.IGNORECASE)
-        if status_match:
-            status = status_match.group(1).strip()
-            return status if status else "No status found"
-        return "No status found"
-
-    def analyze_status(self, status: str, template: str) -> Dict:
-        """Analyze the status code with context from the matching template"""
-        if status == "No status found":
-            return {"status_analysis": "No status information found in the alert summary."}
+    def extract_fields(self, text: str) -> Dict[str, str]:
+        """Extract various fields from the alert summary"""
+        fields = {}
         
-        system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst specializing in status code analysis.
-            Provide precise, technical interpretations of status codes in security contexts."""
-        )
+        # List of field patterns to extract
+        field_patterns = {
+            'status': r"Status:([^\n]*)",
+            'command': r"Command:([^\n]*)",
+            'ip': r"IP:([^\n]*)",
+            'protocol': r"Protocol:([^\n]*)",
+            'hash': r"Hash:([^\n]*)",
+            'source': r"Source:([^\n]*)",
+            'destination': r"Destination:([^\n]*)",
+            'timestamp': r"Timestamp:([^\n]*)",
+            'severity': r"Severity:([^\n]*)",
+            'reputation': r"Reputation:([^\n]*)",
+            'geolocation': r"Geolocation:([^\n]*)"
+        }
         
-        human_message = HumanMessagePromptTemplate.from_template(
-            """Analyze this status code in the context of the template:
-            Template: {template}
-            Status: {status}
-            
-            Provide a concise technical analysis including:
-            1. Status code meaning
-            2. Security implications
-            3. Relevance to template
-            
-            Be precise and technical. Max 50 words."""
-        )
+        # Extract all available fields
+        for field, pattern in field_patterns.items():
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                fields[field] = match.group(1).strip()
         
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-        
-        try:
-            result = chain.run(template=template, status=status)
-            return {"status_analysis": result.strip()}
-        except Exception as e:
-            return {"error": f"Status analysis error: {str(e)}"}
+        return fields
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         """Complete sitrep analysis pipeline with prioritized client query response"""
         matching_templates = self.find_matching_template(alert_summary)
         template = matching_templates[0] if matching_templates else "Unknown Template"
         
-        status = self.extract_status(alert_summary)
-        status_analysis = self.analyze_status(status, template)
+        # Extract all available fields
+        fields = self.extract_fields(alert_summary)
         
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst with deep experience in threat detection and incident response.
-            Your task is to analyze security alerts and provide clear, actionable insights.
-            Format your response using markdown headers and bullet points."""
+            """You are a highly efficient security analyst using GPT-4o-mini. Consider ALL information in the sitrep.
+
+            Critical Requirements:
+            1. Analyze ALL fields present - not just status
+            2. Process alert whether fields are present or not
+            3. NEVER repeat information from the alert/template
+            4. Keep responses under 50 words per section
+            5. If fields exist, analyze their security implications
+            6. Focus on unique insights and critical findings
+            7. Be extremely concise and precise
+
+            Remember: Process all sitrep elements equally."""
         )
         
         if client_query:
             human_template = """
-            Context:
-            Template Type: {template}
-            Status: {status}
-            Alert Summary:
-            {alert_summary}
-            
-            Client Query: {query}
-            
-            Provide analysis using this format:
-            
+            INPUT DATA:
+            Template: {template}
+            Alert: {alert_summary}
+            Fields Detected: {fields}
+            Query: {query}
+
+            RESPONSE REQUIREMENTS:
+            1. Never repeat information from input
+            2. Direct answer to query only
+            3. Include critical context from fields
+            4. Max 50 words per section
+
+            Format:
+
             ## Query Response
-            
-            ### Direct Answer to Client's Question
-            [Provide direct, clear answer]
-            
-            ### Technical Justification
-            [Provide technical explanation]
-            
-            ### Relevant Context
-            [Provide important contextual information]
-            
-            ## Technical Summary
-            
-            ### Key Findings
-            - [Finding 1]
-            - [Finding 2]
-            - [Finding 3]
-            
-            ### Critical Indicators
-            - [Indicator 1]
-            - [Indicator 2]
-            - [Indicator 3]
-            
+            [Direct answer using available context]
+
+            ## Technical Context
+            [Only if critical new insights exist]
+
             ## Required Actions
-            
-            ### Immediate Steps
-            - [Step 1]
-            - [Step 2]
-            
-            ### Investigation Points
-            - [Point 1]
-            - [Point 2]
-            - [Point 3]
-            
-            ### Mitigation Measures
-            - [Measure 1]
-            - [Measure 2]
-            - [Measure 3]
-            """
+            [Only if immediate actions needed]"""
         else:
             human_template = """
-            Context:
-            Template Type: {template}
-            Status: {status}
-            Alert Summary:
-            {alert_summary}
-            
-            Provide analysis using this format:
-            
-            ## Technical Summary
-            
-            ### Key Findings
-            - [Finding 1]
-            - [Finding 2]
-            - [Finding 3]
-            
-            ### Critical Indicators
-            - [Indicator 1]
-            - [Indicator 2]
-            - [Indicator 3]
-            
+            INPUT DATA:
+            Template: {template}
+            Alert: {alert_summary}
+            Fields Detected: {fields}
+
+            RESPONSE REQUIREMENTS:
+            1. Never repeat information from input
+            2. Only new insights and implications
+            3. Consider all fields equally
+            4. Max 50 words per section
+
+            Format:
+
+            ## Key Insights
+            [New technical findings only]
+
             ## Required Actions
-            
-            ### Immediate Steps
-            - [Step 1]
-            - [Step 2]
-            
-            ### Investigation Points
-            - [Point 1]
-            - [Point 2]
-            - [Point 3]
-            
-            ### Mitigation Measures
-            - [Measure 1]
-            - [Measure 2]
-            - [Measure 3]
-            """
+            [Only if immediate actions needed]"""
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
         chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
@@ -209,15 +160,14 @@ class SitrepAnalyzer:
             chain = LLMChain(llm=self.llm, prompt=chat_prompt)
             analysis = chain.run(
                 template=template,
-                status=status,
                 alert_summary=alert_summary,
+                fields=fields,
                 query=client_query if client_query else ""
             )
             
             return {
                 "template": template,
-                "status": status,
-                "status_analysis": status_analysis.get("status_analysis", ""),
+                "fields": fields,
                 "analysis": analysis,
                 "has_query": bool(client_query)
             }
@@ -288,6 +238,13 @@ def main():
             border-radius: 8px;
             margin: 10px 0;
         }
+        .fields-box {
+            background-color: #f7f9fc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #e67e22;
+            margin: 10px 0;
+        }
         .bullet-point {
             margin-left: 20px;
             position: relative;
@@ -345,7 +302,7 @@ def main():
         alert_summary = st.text_area(
             "Paste your security alert details here",
             height=300,
-            placeholder="Enter the complete alert summary including status information..."
+            placeholder="Enter the complete alert summary..."
         )
 
     with col2:
@@ -353,7 +310,7 @@ def main():
         client_query = st.text_area(
             "Enter client questions",
             height=150,
-            placeholder="Enter any specific questions from the client..."
+            placeholder="Enter any specific questions..."
         )
     
     if st.button("Generate Analysis", type="primary"):
@@ -367,21 +324,23 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
-                # Template Match
+                # Display template match
                 st.markdown('<p class="section-header">Matched Template</p>', unsafe_allow_html=True)
                 st.markdown(f'<div class="template-match">{result["template"]}</div>', 
                           unsafe_allow_html=True)
                 
-                # Status Analysis
-                st.markdown('<p class="section-header">Status Analysis</p>', unsafe_allow_html=True)
-                st.markdown(f'''<div class="status-box">
-                    <strong>Status Code:</strong> {result["status"]}<br>
-                    <strong>Analysis:</strong> {result["status_analysis"]}
-                    </div>''', unsafe_allow_html=True)
+                # Display extracted fields if present
+                if result["fields"]:
+                    st.markdown('<p class="section-header">Extracted Fields</p>', unsafe_allow_html=True)
+                    st.markdown('<div class="fields-box">', unsafe_allow_html=True)
+                    for field, value in result["fields"].items():
+                        st.markdown(f"**{field.title()}:** {value}")
+                    st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Alert Analysis
-                st.markdown('<p class="section-header">Alert Analysis</p>', unsafe_allow_html=True)
-                st.markdown(result["analysis"], unsafe_allow_html=True)
+                # Display analysis
+                st.markdown('<p class="section-header">Analysis</p>', unsafe_allow_html=True)
+                st.markdown(f'<div class="analysis-box">{result["analysis"]}</div>', 
+                          unsafe_allow_html=True)
                 
                 # Download button
                 combined_analysis = f"""
@@ -390,16 +349,15 @@ def main():
                 ## Matched Template
                 {result['template']}
                 
-                ## Status Analysis
-                Status Code: {result['status']}
-                {result['status_analysis']}
+                ## Extracted Fields
+                {result['fields']}
                 
-                ## Alert Analysis
+                ## Analysis
                 {result['analysis']}
                 """
                 
                 st.download_button(
-                    label="Download Complete Analysis",
+                    label="Download Analysis",
                     data=combined_analysis,
                     file_name="sitrep_analysis_report.md",
                     mime="text/markdown"
