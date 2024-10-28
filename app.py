@@ -59,43 +59,38 @@ class SitrepAnalyzer:
     def extract_status(self, text: str) -> Optional[str]:
         status_match = re.search(r"Status:([^\n]*)", text, re.IGNORECASE)
         return status_match.group(1).strip() if status_match else None
-
+    
     def answer_query(self, alert_summary: str, query: str) -> str:
-    system_message = SystemMessagePromptTemplate.from_template(
-        """You are a security analyst providing direct answers to security alert queries.
-        Rules:
-        - Start with 'User Query:' followed by the actual query
-        - Provide direct, concise answers without repeating alert content
-        - No general recommendations unless specifically asked
-        - Focus only on what was asked
-        - Avoid listing multiple steps/recommendations unless explicitly requested
-        - Keep response brief and focused
+        system_message = SystemMessagePromptTemplate.from_template(
+            """You are a security analyst providing direct answers to security alert queries.
+            Rules:
+            - Start the response with the specific answer to the query
+            - Provide direct, concise answers without repeating alert content
+            - No general recommendations unless specifically asked
+            - Focus only on what was asked
+            - Avoid listing multiple steps/recommendations unless explicitly requested
+            - Keep response brief and focused"""
+        )
+        
+        human_template = """
+        Alert Summary:
+        {alert_summary}
+        
+        Query: {query}
+        
+        Provide a direct answer that:
+        1. Does not repeat information already in the alert
+        2. Addresses only what was asked
+        3. Is brief and focused
+        4. Avoids generic security advice
+        5. Only gives recommendations if specifically requested
         """
-    )
-    
-    human_template = """
-    Alert Summary:
-    {alert_summary}
-    
-    Query: {query}
-    
-    Provide a direct answer that:
-    1. Does not repeat information already in the alert
-    2. Addresses only what was asked
-    3. Is brief and focused
-    4. Avoids generic security advice
-    5. Only gives recommendations if specifically requested
-    """
-    
-    human_message = HumanMessagePromptTemplate.from_template(human_template)
-    chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-    
-    chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-    response = chain.run(alert_summary=alert_summary, query=query)
-    
-    # Format the response with the query as heading
-    formatted_response = f"User Query: {query}\n\n{response}"
-    return formatted_response
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        
+        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+        return chain.run(alert_summary=alert_summary, query=query)
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
@@ -183,6 +178,7 @@ def main():
                 # Display query response if exists
                 if result["query_response"]:
                     st.markdown('<div class="query-response">' +
+                              f'<strong>User Query:</strong><br>{client_query}<br><br>' +
                               f'{result["query_response"]}' +
                               '</div>', unsafe_allow_html=True)
 
