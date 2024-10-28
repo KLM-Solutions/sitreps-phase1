@@ -100,8 +100,6 @@ class SitrepAnalyzer:
         2. Include all relevant technical details from the alert
         3. Do not include generic security advice unless specifically asked
         4. Avoid mentioning dates, event IDs, or specific codes
-        5. If discussing thresholds or metrics, provide specific recommendations
-        6. Focus on actionable insights directly related to the query
         
         Provide a comprehensive but focused response that directly answers the query.
         """
