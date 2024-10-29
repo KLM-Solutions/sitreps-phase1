@@ -127,38 +127,67 @@ class SitrepAnalyzer:
         
         return fields
 
-    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-        """Complete sitrep analysis pipeline with prioritized client query response"""
-        template = self.find_matching_template(alert_summary)
-        fields = self.extract_fields(alert_summary)
+   def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
+    """Complete sitrep analysis pipeline with prioritized client query response"""
+    template = self.find_matching_template(alert_summary)
+    fields = self.extract_fields(alert_summary)
+    
+    # Dedicated response LLM with higher temperature for more natural responses
+    response_llm = ChatOpenAI(
+        model_name="gpt-4o-mini",
+        temperature=0.1,
+        openai_api_key=OPENAI_API_KEY
+    )
+    
+    system_message = SystemMessagePromptTemplate.from_template(
+        """You are an expert security analyst who provides clear, precise, and insightful analysis. 
+        Focus on delivering accurate, actionable information without any formatting constraints.
         
-        # Modified system message for more concise analysis
-        system_message = SystemMessagePromptTemplate.from_template(
-            """You are a precise security analyst focused on delivering ultra-concise insights. Your analysis must be:
-
-            1. Bullet-pointed only
-            2. Maximum 3-4 words per point
-            3. Only critical findings
-            4. No explanations or context
-            5. Action-oriented commands
-            6. No repetition of alert data
-
-            Use this structure:
-            • [Threat Level]: High/Medium/Low
-            • [Finding]: Key security issue
-            • [Impact]: Business risk
-            • [Action]: Required response"""
+        Guidelines:
+        - Provide direct, clear responses
+        - Focus on what matters most
+        - Avoid repeating alert data
+        - Be precise and technical
+        - Include key insights and recommendations
+        - Tailor depth based on query complexity"""
+    )
+    
+    if client_query:
+        human_template = """
+        Context:
+        Alert Details: {alert_summary}
+        Detected Fields: {fields}
+        User Query: {query}
+        
+        Provide a clear, direct response addressing the user's query, incorporating relevant context from the alert."""
+    else:
+        human_template = """
+        Context:
+        Alert Details: {alert_summary}
+        Detected Fields: {fields}
+        
+        Analyze this security alert and provide key insights, focusing on what matters most."""
+    
+    human_message = HumanMessagePromptTemplate.from_template(human_template)
+    chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+    
+    try:
+        chain = LLMChain(llm=response_llm, prompt=chat_prompt)
+        analysis = chain.run(
+            template=template,
+            alert_summary=alert_summary,
+            fields=fields,
+            query=client_query if client_query else ""
         )
         
-        if client_query:
-            # Modified human template for queries to be more concise
-            human_template = """
-            Alert: {alert_summary}
-            Fields: {fields}
-            Query: {query}
-        
-        human_message = HumanMessagePromptTemplate.from_template(human_template)
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        return {
+            "template": template,
+            "fields": fields,
+            "analysis": analysis,
+            "has_query": bool(client_query)
+        }
+    except Exception as e:
+        return {"error": f"Error generating analysis: {str(e)}"}
         
         try:
             chain = LLMChain(llm=self.analysis_llm, prompt=chat_prompt)
