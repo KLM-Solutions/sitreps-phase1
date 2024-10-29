@@ -11,6 +11,11 @@ from langchain.prompts.chat import (
 import openai
 import re
 from typing import Dict, Optional, List
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # API Configuration
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -41,6 +46,109 @@ SITREP_TEMPLATES = [
     "Kerberos-related alert",
     "Kerberos Authentication Abuse"
 ]
+
+class FAISSTemplateMatcher:
+    """FAISS-based template matching system"""
+    def __init__(self, openai_api_key: str):
+        self.embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+        self.templates = SITREP_TEMPLATES
+        self.setup_vector_store()
+
+    def setup_vector_store(self):
+        """Initialize FAISS vector store with templates"""
+        try:
+            # Create embeddings for templates
+            template_embeddings = self.embeddings.embed_documents(self.templates)
+            self.vector_store = FAISS.from_embeddings(
+                template_embeddings,
+                self.templates,
+                self.embeddings
+            )
+            logger.info("FAISS vector store initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize FAISS: {str(e)}")
+            raise
+
+    def find_similar_templates(self, alert_text: str, k: int = 3) -> List[Dict]:
+        """Find most similar templates using FAISS"""
+        try:
+            # Get similar templates with scores
+            similar_templates = self.vector_store.similarity_search_with_score(
+                alert_text,
+                k=k
+            )
+            
+            # Format results
+            results = []
+            for template, score in similar_templates:
+                results.append({
+                    "template": template,
+                    "similarity_score": 1 - score  # Convert distance to similarity
+                })
+            
+            return results
+        except Exception as e:
+            logger.error(f"FAISS search error: {str(e)}")
+            return []
+
+class TemplateMatcher:
+    """LLM-based template verification"""
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.setup_matcher()
+
+    def setup_matcher(self):
+        system_template = """You are a security alert template verifier.
+        Given a list of potential template matches from FAISS and an alert summary,
+        verify which template is the most accurate match.
+        
+        Response format:
+        {
+            "best_match": "template name",
+            "confidence": <0-100>,
+            "reason": "brief explanation"
+        }"""
+
+        human_template = """Alert Summary:
+        {alert_text}
+        
+        Potential Templates (with similarity scores):
+        {potential_matches}
+        
+        Verify the best matching template:"""
+        
+        self.matcher_chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def verify_template(self, alert_text: str, potential_matches: List[Dict]) -> Dict:
+        try:
+            matches_str = "\n".join([
+                f"- {m['template']} (similarity: {m['similarity_score']:.2f})"
+                for m in potential_matches
+            ])
+            
+            result = self.matcher_chain.run(
+                alert_text=alert_text,
+                potential_matches=matches_str
+            )
+            
+            return eval(result)
+        except Exception as e:
+            logger.error(f"Template verification error: {str(e)}")
+            return {
+                "best_match": "Unknown Template",
+                "confidence": 0,
+                "reason": f"Verification failed: {str(e)}"
+            }
 
 class QueryClassifier:
     """Dedicated classifier for analyzing user queries only"""
@@ -76,18 +184,9 @@ CLASSIFY AS PHASE_2 IF THE QUERY:
 - Involves customer-specific data
 
 RESPONSE FORMAT:
-Return ONLY 'PHASE_1' or 'PHASE_2' based on the query type.
+Return ONLY 'PHASE_1' or 'PHASE_2' based on the query type."""
 
-EXAMPLES:
-Query: "What are best practices for handling TOR IP alerts?"
-Response: PHASE_1
-
-Query: "Why did we see this specific IP scanning our network at 2:30 PM?"
-Response: PHASE_2"""
-
-        human_template = """USER QUERY: {query}
-
-CLASSIFY AS PHASE_1 OR PHASE_2:"""
+        human_template = "USER QUERY: {query}"
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -120,15 +219,11 @@ class CrispResponseGenerator:
         4. Be specific but avoid customer-specific details
         5. Focus on industry best practices
         6. Be direct and concise
-        7. Avoid generic advice
-        
-        Format:
-        - Start with direct answer about suggested approach
-        - List better or complementary solutions if applicable
-        - Include brief technical justification if needed"""
+        7. Avoid generic advice"""
 
         human_template = """Context: {alert_summary}
         Query: {query}
+        Identified Template: {template}
         
         Provide direct technical response:"""
 
@@ -140,57 +235,17 @@ class CrispResponseGenerator:
             ])
         )
 
-    def generate(self, alert_summary: str, query: str) -> str:
-        return self.chain.run(alert_summary=alert_summary, query=query).strip()
-
-class TemplateMatcher:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_matcher()
-        self.templates = SITREP_TEMPLATES
-
-    def setup_matcher(self):
-        system_template = """You are a specialized security alert template matcher focused on exact pattern matching.
-        
-        Key matching criteria:
-        1. Authentication patterns (Kerberos, sign-ins, access)
-        2. Traffic patterns (anomalous, internal, internet)
-        3. IP-based threats (blacklisted, tor, spam, malware)
-        4. Protocol indicators (DNS, TLS, NTP)
-        5. Specific services (bots, scanners, anonymization)
-        
-        Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
-
-        human_template = """Available Templates:
-        {templates}
-
-        Alert Text:
-        {alert_text}
-
-        Return exact matching template name:"""
-        
-        self.matcher_chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def match_template(self, alert_text: str) -> str:
-        result = self.matcher_chain.run(
-            templates="\n".join(self.templates),
-            alert_text=alert_text
+    def generate(self, alert_summary: str, query: str, template: str) -> str:
+        return self.chain.run(
+            alert_summary=alert_summary,
+            query=query,
+            template=template
         ).strip()
-        return result if result in self.templates else "Unknown Template"
 
 class SitrepAnalyzer:
     def __init__(self):
         try:
+            self.faiss_matcher = FAISSTemplateMatcher(OPENAI_API_KEY)
             self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
             self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
             self.query_classifier = QueryClassifier(OPENAI_API_KEY)
@@ -204,27 +259,45 @@ class SitrepAnalyzer:
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
-            template = self.template_matcher.match_template(alert_summary)
+            # Step 1: Find similar templates using FAISS
+            similar_templates = self.faiss_matcher.find_similar_templates(alert_summary)
+            
+            if not similar_templates:
+                return {"error": "No matching templates found"}
+            
+            # Step 2: Verify best template match using LLM
+            template_result = self.template_matcher.verify_template(
+                alert_summary,
+                similar_templates
+            )
+            
             status = self.extract_status(alert_summary)
             
             query_response = None
             is_phase_1 = False
             
             if client_query:
-                # Only analyze the query itself, not the alert summary
                 is_phase_1 = self.query_classifier.classify(client_query)
                 if is_phase_1:
-                    query_response = self.response_generator.generate(alert_summary, client_query)
+                    query_response = self.response_generator.generate(
+                        alert_summary,
+                        client_query,
+                        template_result["best_match"]
+                    )
                 else:
                     query_response = "⚠️ This query requires analyst review - beyond Phase 1 automation scope."
             
             return {
-                "template": template,
+                "template": template_result["best_match"],
+                "confidence": template_result["confidence"],
+                "reason": template_result["reason"],
+                "similar_templates": similar_templates,
                 "status": status,
                 "is_phase_1": is_phase_1,
                 "query_response": query_response
             }
         except Exception as e:
+            logger.error(f"Analysis error: {str(e)}")
             return {"error": f"Analysis error: {str(e)}"}
 
 def main():
@@ -267,7 +340,7 @@ def main():
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            alert_summary = st.text_area("Summary Analysis", height=300)
+            alert_summary = st.text_area("Alert Summary", height=300)
 
         with col2:
             client_query = st.text_area("User Query", height=150)
@@ -284,36 +357,40 @@ def main():
                 if "error" in result:
                     st.error(result["error"])
                 else:
-                    # Show template and status in header box
-                    header_content = []
-                    if result["template"] != "Unknown Template":
-                        header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
-                    if result.get("status"):
-                        header_content.append(f"<strong>Status:</strong> {result['status']}")
+                    # Show template and status
+                    st.markdown(
+                        f'<div class="header-box">'
+                        f'<strong>Matched Template:</strong> {result["template"]}<br>'
+                        f'<strong>Confidence:</strong> {result["confidence"]}%<br>'
+                        f'<strong>Reason:</strong> {result["reason"]}<br>'
+                        f'<strong>Status:</strong> {result.get("status", "Not specified")}'
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
                     
-                    if header_content:
+                    # Show similar templates
+                    st.markdown("### Similar Templates")
+                    for template in result["similar_templates"]:
                         st.markdown(
-                            '<div class="header-box">' + 
-                            '<br>'.join(header_content) + 
-                            '</div>', 
-                            unsafe_allow_html=True
+                            f"- {template['template']} "
+                            f"(similarity: {template['similarity_score']:.2f})"
                         )
                     
-                    # Show phase classification and response if query exists
+                    # Show query response if exists
                     if result.get("query_response"):
                         phase_class = "phase-1" if result["is_phase_1"] else "phase-2"
                         phase_text = "Phase 1 - Automated Response" if result["is_phase_1"] else "Phase 2 - Requires Analyst"
                         
                         st.markdown(
-                            f'<div class="phase-indicator {phase_class}">{phase_text}</div>' +
-                            '<div class="response-box">' +
-                            '<strong>Response:</strong><br>' +
-                            f'{result["query_response"]}' +
+                            f'<div class="response-box">'
+                            f'<div class="phase-indicator {phase_class}">{phase_text}</div>'
+                            f'<strong>Response:</strong><br>{result["query_response"]}'
                             '</div>',
                             unsafe_allow_html=True
                         )
     
     except Exception as e:
+        logger.error(f"Application error: {str(e)}")
         st.error(f"Application error: {str(e)}")
 
 if __name__ == "__main__":
