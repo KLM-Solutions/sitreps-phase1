@@ -13,7 +13,7 @@ from typing import Dict, Optional, List
 import re
 
 # API Configuration
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]  # Replace this with secret in Streamlit Cloud
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 openai.api_key = OPENAI_API_KEY
 
 # Template definitions
@@ -42,27 +42,70 @@ SITREP_TEMPLATES = [
 class SitrepAnalyzer:
     def __init__(self):
         self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-        self.llm = ChatOpenAI(
+        # Separate GPT-4 model for template matching
+        self.template_matcher_llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0,
+            openai_api_key=OPENAI_API_KEY
+        )
+        # Original model for analysis
+        self.analysis_llm = ChatOpenAI(
             model_name="gpt-4o-mini",
             temperature=0.1,
             openai_api_key=OPENAI_API_KEY
         )
         self.setup_vector_store()
+        self.setup_template_matcher()
     
     def setup_vector_store(self):
         """Initialize FAISS vector store with templates"""
         self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
     
-    def find_matching_template(self, sitrep_text: str, top_k: int = 1) -> List[str]:
-        """Find most similar template(s) using similarity search"""
-        matches = self.vector_store.similarity_search(sitrep_text, k=top_k)
-        return [match.page_content for match in matches]
+    def setup_template_matcher(self):
+        """Setup the template matching prompt"""
+        system_template = """You are a precise security alert template matcher. Your task is to:
+        1. Analyze the given security alert
+        2. Match it to the most relevant template from the provided list
+        3. Return ONLY the exact template name that matches best
+        4. If no exact match exists, return the closest matching template
+
+        Focus on key alert characteristics and pattern matching."""
+
+        human_template = """
+        AVAILABLE TEMPLATES:
+        {templates}
+
+        ALERT TO ANALYZE:
+        {alert}
+
+        Return only the best matching template name from the list. No explanation needed."""
+
+        self.template_matcher_prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(system_template),
+            HumanMessagePromptTemplate.from_template(human_template)
+        ])
+    
+    def find_matching_template(self, sitrep_text: str) -> str:
+        """Find most similar template using GPT-4o-mini"""
+        try:
+            chain = LLMChain(llm=self.template_matcher_llm, prompt=self.template_matcher_prompt)
+            matched_template = chain.run(
+                templates="\n".join(SITREP_TEMPLATES),
+                alert=sitrep_text
+            ).strip()
+            
+            # Verify the template exists in our list
+            if matched_template in SITREP_TEMPLATES:
+                return matched_template
+            return "Unknown Template"
+        except Exception as e:
+            print(f"Template matching error: {str(e)}")
+            return "Unknown Template"
     
     def extract_fields(self, text: str) -> Dict[str, str]:
         """Extract various fields from the alert summary"""
         fields = {}
         
-        # List of field patterns to extract
         field_patterns = {
             'status': r"Status:([^\n]*)",
             'command': r"Command:([^\n]*)",
@@ -77,7 +120,6 @@ class SitrepAnalyzer:
             'geolocation': r"Geolocation:([^\n]*)"
         }
         
-        # Extract all available fields
         for field, pattern in field_patterns.items():
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
@@ -87,8 +129,8 @@ class SitrepAnalyzer:
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         """Complete sitrep analysis pipeline with prioritized client query response"""
-        matching_templates = self.find_matching_template(alert_summary)
-        template = matching_templates[0] if matching_templates else "Unknown Template"
+        # Use GPT-4 for template matching
+        template = self.find_matching_template(alert_summary)
         
         # Extract all available fields
         fields = self.extract_fields(alert_summary)
@@ -157,7 +199,7 @@ class SitrepAnalyzer:
         chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
         
         try:
-            chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+            chain = LLMChain(llm=self.analysis_llm, prompt=chat_prompt)
             analysis = chain.run(
                 template=template,
                 alert_summary=alert_summary,
