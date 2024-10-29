@@ -9,11 +9,11 @@ from langchain.prompts.chat import (
     HumanMessagePromptTemplate
 )
 import openai
-import re
 from typing import Dict, Optional, List
+import re
 
 # API Configuration
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]  # Replace this with secret in Streamlit Cloud
 openai.api_key = OPENAI_API_KEY
 
 # Template definitions
@@ -36,338 +36,332 @@ SITREP_TEMPLATES = [
     "Tor IP",
     "Spam IP",
     "NTP TOR IP",
-    "Malware IP",
-    "Anomalous Kerberos Authentication",
-    "Kerberos-related alert",
-    "Kerberos Authentication Abuse"
+    "Malware IP"
 ]
 
-class TemplateMatcher:
-    """Enhanced template matcher with improved matching capabilities"""
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.templates = SITREP_TEMPLATES
-        self.setup_matcher()
-
-    def setup_matcher(self):
-        system_template = """You are a specialized security alert template matcher with advanced pattern recognition capabilities.
-
-KEY MATCHING CRITERIA:
-1. Authentication Patterns:
-   - Kerberos authentication events
-   - Sign-in activities
-   - Access patterns
-
-2. Traffic Analysis:
-   - Anomalous traffic (internal/external)
-   - Size/packet/session anomalies
-   - Network behavior patterns
-
-3. IP-Based Threats:
-   - Blacklisted IPs
-   - TOR/VPN endpoints
-   - Known malicious sources
-
-4. Protocol Indicators:
-   - DNS queries
-   - TLS traffic
-   - NTP communications
-
-5. Service-Specific Alerts:
-   - Bot activities
-   - Scanning detection
-   - Automation tool usage
-
-MATCHING RULES:
-1. Exact matches take priority
-2. Consider semantic equivalence for near-matches
-3. Pattern-based matching for similar alerts
-4. Context-aware template selection
-
-Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
-
-        human_template = """Available Templates:
-{templates}
-
-Alert Text:
-{alert_text}
-
-Return exact matching template name:"""
-        
-        self.matcher_chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def extract_status(self, text: str) -> Optional[str]:
-        """Extract status information from alert text using enhanced pattern matching"""
-        # Try multiple status patterns
-        patterns = [
-            r"Status:([^\n]*)",
-            r"Current Status:([^\n]*)",
-            r"Alert Status:([^\n]*)",
-            r"Status\s*:\s*([^:\n]*)",
-        ]
-        
-        for pattern in patterns:
-            status_match = re.search(pattern, text, re.IGNORECASE)
-            if status_match:
-                return status_match.group(1).strip()
-        return None
-
-    def match_template(self, alert_text: str) -> str:
-        """Match alert text to template with improved accuracy"""
-        try:
-            result = self.matcher_chain.run(
-                templates="\n".join(self.templates),
-                alert_text=alert_text
-            ).strip()
-            return result if result in self.templates else "Unknown Template"
-        except Exception as e:
-            return "Unknown Template"
-
-class QueryClassifier:
-    """Dedicated classifier for analyzing user queries"""
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_classifier()
-
-    def setup_classifier(self):
-        system_template = """You are a security query classifier focused solely on determining if user queries are general or specific in nature.
-
-CLASSIFY AS PHASE_1 IF THE QUERY:
-- Asks about general security best practices
-- Requests standard mitigation strategies
-- Seeks common security guidelines
-- Asks about industry-standard approaches
-- Requires general technical explanations
-- Asks about typical configurations
-- Seeks understanding of common alerts
-- Requests general prevention advice
-
-CLASSIFY AS PHASE_2 IF THE QUERY:
-- Mentions specific IP addresses
-- References particular log entries
-- Asks about custom configurations
-- Requires analysis of specific incidents
-- Mentions unique system setups
-- Requests investigation of particular events
-- Needs specific infrastructure details
-- Involves customer-specific data
-
-RESPONSE FORMAT:
-Return ONLY 'PHASE_1' or 'PHASE_2' based on the query type."""
-
-        human_template = """USER QUERY: {query}
-
-CLASSIFY AS PHASE_1 OR PHASE_2:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def classify(self, query: str) -> bool:
-        result = self.chain.run(query=query).strip()
-        return result == "PHASE_1"
-
-class CrispResponseGenerator:
-    """Enhanced response generator for security queries"""
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_chain()
-
-    def setup_chain(self):
-        system_template = """You are a security expert providing direct, actionable responses.
-    
-        Response Guidelines:
-        1. State the effectiveness of suggested approaches
-        2. Provide alternative or complementary solutions
-        3. Explain briefly why certain approaches are better
-        4. Be specific but avoid customer-specific details
-        5. Focus on industry best practices
-        6. Be direct and concise
-        7. Avoid generic advice
-        
-        Format:
-        - Start with direct answer about suggested approach
-        - List better or complementary solutions if applicable
-        - Include brief technical justification if needed"""
-
-        human_template = """Context: {alert_summary}
-        Query: {query}
-        
-        Provide direct technical response:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def generate(self, alert_summary: str, query: str) -> str:
-        return self.chain.run(alert_summary=alert_summary, query=query).strip()
-
 class SitrepAnalyzer:
-    """Main analyzer class with enhanced template matching"""
     def __init__(self):
-        try:
-            self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
-            self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
-            self.query_classifier = QueryClassifier(OPENAI_API_KEY)
-        except Exception as e:
-            st.error(f"Failed to initialize analyzer: {str(e)}")
-            st.stop()
+        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=OPENAI_API_KEY
+        )
+        self.setup_vector_store()
+    
+    def setup_vector_store(self):
+        """Initialize FAISS vector store with templates"""
+        self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
+    
+    def find_matching_template(self, sitrep_text: str, top_k: int = 1) -> List[str]:
+        """Find most similar template(s) using similarity search"""
+        matches = self.vector_store.similarity_search(sitrep_text, k=top_k)
+        return [match.page_content for match in matches]
+    
+    def extract_fields(self, text: str) -> Dict[str, str]:
+        """Extract various fields from the alert summary"""
+        fields = {}
+        
+        # List of field patterns to extract
+        field_patterns = {
+            'status': r"Status:([^\n]*)",
+            'command': r"Command:([^\n]*)",
+            'ip': r"IP:([^\n]*)",
+            'protocol': r"Protocol:([^\n]*)",
+            'hash': r"Hash:([^\n]*)",
+            'source': r"Source:([^\n]*)",
+            'destination': r"Destination:([^\n]*)",
+            'timestamp': r"Timestamp:([^\n]*)",
+            'severity': r"Severity:([^\n]*)",
+            'reputation': r"Reputation:([^\n]*)",
+            'geolocation': r"Geolocation:([^\n]*)"
+        }
+        
+        # Extract all available fields
+        for field, pattern in field_patterns.items():
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                fields[field] = match.group(1).strip()
+        
+        return fields
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
+        """Complete sitrep analysis pipeline with prioritized client query response"""
+        matching_templates = self.find_matching_template(alert_summary)
+        template = matching_templates[0] if matching_templates else "Unknown Template"
+        
+        # Extract all available fields
+        fields = self.extract_fields(alert_summary)
+        
+        system_message = SystemMessagePromptTemplate.from_template(
+            """You are a highly efficient security analyst using GPT-4o-mini. Consider ALL information in the sitrep.
+
+            Critical Requirements:
+            1. Analyze ALL fields present - not just status
+            2. Process alert whether fields are present or not
+            3. NEVER repeat information from the alert/template
+            4. Keep responses under 50 words per section
+            5. If fields exist, analyze their security implications
+            6. Focus on unique insights and critical findings
+            7. Be extremely concise and precise
+
+            Remember: Process all sitrep elements equally."""
+        )
+        
+        if client_query:
+            human_template = """
+            INPUT DATA:
+            Template: {template}
+            Alert: {alert_summary}
+            Fields Detected: {fields}
+            Query: {query}
+
+            RESPONSE REQUIREMENTS:
+            1. Never repeat information from input
+            2. Direct answer to query only
+            3. Include critical context from fields
+            4. Max 50 words per section
+
+            Format:
+
+            ## Query Response
+            [Direct answer using available context]
+
+            ## Technical Context
+            [Only if critical new insights exist]
+
+            ## Required Actions
+            [Only if immediate actions needed]"""
+        else:
+            human_template = """
+            INPUT DATA:
+            Template: {template}
+            Alert: {alert_summary}
+            Fields Detected: {fields}
+
+            RESPONSE REQUIREMENTS:
+            1. Never repeat information from input
+            2. Only new insights and implications
+            3. Consider all fields equally
+            4. Max 50 words per section
+
+            Format:
+
+            ## Key Insights
+            [New technical findings only]
+
+            ## Required Actions
+            [Only if immediate actions needed]"""
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        
         try:
-            # Enhanced template matching
-            template = self.template_matcher.match_template(alert_summary)
-            status = self.template_matcher.extract_status(alert_summary)
-            
-            query_response = None
-            is_phase_1 = False
-            
-            if client_query:
-                is_phase_1 = self.query_classifier.classify(client_query)
-                if is_phase_1:
-                    query_response = self.response_generator.generate(alert_summary, client_query)
-                else:
-                    query_response = "⚠️ This query requires analyst review - beyond Phase 1 automation scope."
+            chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+            analysis = chain.run(
+                template=template,
+                alert_summary=alert_summary,
+                fields=fields,
+                query=client_query if client_query else ""
+            )
             
             return {
                 "template": template,
-                "status": status,
-                "is_phase_1": is_phase_1,
-                "query_response": query_response
+                "fields": fields,
+                "analysis": analysis,
+                "has_query": bool(client_query)
             }
         except Exception as e:
-            return {"error": f"Analysis error: {str(e)}"}
+            return {"error": f"Error generating analysis: {str(e)}"}
 
 def main():
-    st.set_page_config(page_title="Enhanced Alert Analyzer", layout="wide")
+    st.set_page_config(page_title="Sitreps Analyzer", layout="wide")
     
-    # Enhanced CSS styling
+    # Styling
     st.markdown("""
         <style>
-        .header-box { 
-            background: #f8f9fa; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin: 10px 0;
-            border-left: 4px solid #2a5298;
-        }
-        .response-box { 
-            background: white; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin: 10px 0; 
-            border-left: 4px solid #3498db; 
-        }
-        .phase-indicator {
-            padding: 5px 10px;
-            border-radius: 3px;
+        .main-title {
+            font-size: 36px !important;
             font-weight: bold;
-            margin-bottom: 10px;
+            background: linear-gradient(45deg, #1e3c72, #2a5298);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            padding: 20px 0;
+            text-align: center;
+            letter-spacing: 2px;
+            margin-bottom: 30px;
         }
-        .phase-1 {
-            background-color: #d4edda;
-            color: #155724;
+        .section-header {
+            font-size: 24px !important;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 20px;
+            padding: 10px 0;
+            border-bottom: 2px solid #eee;
         }
-        .phase-2 {
-            background-color: #f8d7da;
-            color: #721c24;
+        .subsection-header {
+            font-size: 20px !important;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 15px;
+            padding: 8px 0;
+        }
+        .analysis-box {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #2ecc71;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .analysis-section {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .client-query-response {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #3498db;
+            margin-bottom: 20px;
         }
         .template-match {
-            font-weight: bold;
-            color: #2a5298;
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
         }
-        .status-indicator {
+        .status-box {
+            background-color: #fff3e6;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .fields-box {
+            background-color: #f7f9fc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #e67e22;
+            margin: 10px 0;
+        }
+        .bullet-point {
+            margin-left: 20px;
+            position: relative;
+        }
+        .bullet-point:before {
+            content: "•";
+            position: absolute;
+            left: -15px;
+            color: #3498db;
+        }
+        h2 {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #2c3e50 !important;
+            margin-top: 25px !important;
+            margin-bottom: 15px !important;
+        }
+        h3 {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            color: #34495e !important;
+            margin-top: 20px !important;
+            margin-bottom: 10px !important;
+        }
+        ul {
+            margin-left: 20px !important;
+            margin-bottom: 15px !important;
+        }
+        li {
+            margin-bottom: 8px !important;
+        }
+        .stButton>button {
+            background-color: #2a5298;
+            color: white;
+            border-radius: 5px;
+            padding: 10px 20px;
             font-weight: bold;
-            color: #28a745;
+        }
+        .stTextArea>div>div>textarea {
+            border-radius: 5px;
+            border-color: #e0e0e0;
         }
         </style>
         """, unsafe_allow_html=True)
     
-    try:
-        # Layout setup
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.markdown("### Alert Summary Analysis")
-            alert_summary = st.text_area("Enter the alert summary for analysis:", height=300)
-
-        with col2:
-            st.markdown("### User Query (Optional)")
-            client_query = st.text_area("Enter any specific questions about the alert:", height=150)
-        
-        if st.button("Analyze Alert", type="primary"):
-            if not alert_summary:
-                st.error("Please enter alert details to analyze.")
-                return
-            
-            analyzer = SitrepAnalyzer()
-            with st.spinner("Analyzing alert details..."):
-                result = analyzer.analyze_sitrep(alert_summary, client_query)
-                
-                if "error" in result:
-                    st.error(result["error"])
-                else:
-                    # Display template and status information
-                    header_content = []
-                    if result["template"] != "Unknown Template":
-                        header_content.append(
-                            f'<span class="template-match">Matched Template:</span> {result["template"]}'
-                        )
-                    if result.get("status"):
-                        header_content.append(
-                            f'<span class="status-indicator">Status:</span> {result["status"]}'
-                        )
-                    
-                    if header_content:
-                        st.markdown(
-                            '<div class="header-box">' + 
-                            '<br>'.join(header_content) + 
-                            '</div>', 
-                            unsafe_allow_html=True
-                        )
-                    
-                    # Display query response if provided
-                    if result.get("query_response"):
-                        phase_class = "phase-1" if result["is_phase_1"] else "phase-2"
-                        phase_text = "Phase 1 - Automated Response" if result["is_phase_1"] else "Phase 2 - Requires Analyst"
-                        
-                        st.markdown(
-                            f'<div class="phase-indicator {phase_class}">{phase_text}</div>' +
-                            '<div class="response-box">' +
-                            '<strong>Response:</strong><br>' +
-                            f'{result["query_response"]}' +
-                            '</div>',
-                            unsafe_allow_html=True
-                        )
+    analyzer = SitrepAnalyzer()
     
-    except Exception as e:
-        st.error(f"Application error: {str(e)}")
+    # Main interface
+    st.markdown('<p class="main-title">Sitreps Analysis System</p>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown('<p class="section-header">Alert Summary</p>', unsafe_allow_html=True)
+        alert_summary = st.text_area(
+            "Paste your security alert details here",
+            height=300,
+            placeholder="Enter the complete alert summary..."
+        )
+
+    with col2:
+        st.markdown('<p class="section-header">Client Query</p>', unsafe_allow_html=True)
+        client_query = st.text_area(
+            "Enter client questions",
+            height=150,
+            placeholder="Enter any specific questions..."
+        )
+    
+    if st.button("Generate Analysis", type="primary"):
+        if not alert_summary:
+            st.error("Please enter an alert summary to analyze.")
+            return
+        
+        with st.spinner("Analyzing security alert..."):
+            result = analyzer.analyze_sitrep(alert_summary, client_query)
+            
+            if "error" in result:
+                st.error(result["error"])
+            else:
+                # Display template match
+                st.markdown('<p class="section-header">Matched Template</p>', unsafe_allow_html=True)
+                st.markdown(f'<div class="template-match">{result["template"]}</div>', 
+                          unsafe_allow_html=True)
+                
+                # Display extracted fields if present
+                if result["fields"]:
+                    st.markdown('<p class="section-header">Extracted Fields</p>', unsafe_allow_html=True)
+                    st.markdown('<div class="fields-box">', unsafe_allow_html=True)
+                    for field, value in result["fields"].items():
+                        st.markdown(f"**{field.title()}:** {value}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Display analysis
+                st.markdown('<p class="section-header">Analysis</p>', unsafe_allow_html=True)
+                st.markdown(f'<div class="analysis-box">{result["analysis"]}</div>', 
+                          unsafe_allow_html=True)
+                
+                # Download button
+                combined_analysis = f"""
+                # SITREP ANALYSIS REPORT
+                
+                ## Matched Template
+                {result['template']}
+                
+                ## Extracted Fields
+                {result['fields']}
+                
+                ## Analysis
+                {result['analysis']}
+                """
+                
+                st.download_button(
+                    label="Download Analysis",
+                    data=combined_analysis,
+                    file_name="sitrep_analysis_report.md",
+                    mime="text/markdown"
+                )
 
 if __name__ == "__main__":
     main()
