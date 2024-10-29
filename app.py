@@ -42,8 +42,99 @@ SITREP_TEMPLATES = [
     "Kerberos Authentication Abuse"
 ]
 
+class TemplateMatcher:
+    """Enhanced template matcher with improved matching capabilities"""
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.templates = SITREP_TEMPLATES
+        self.setup_matcher()
+
+    def setup_matcher(self):
+        system_template = """You are a specialized security alert template matcher with advanced pattern recognition capabilities.
+
+KEY MATCHING CRITERIA:
+1. Authentication Patterns:
+   - Kerberos authentication events
+   - Sign-in activities
+   - Access patterns
+
+2. Traffic Analysis:
+   - Anomalous traffic (internal/external)
+   - Size/packet/session anomalies
+   - Network behavior patterns
+
+3. IP-Based Threats:
+   - Blacklisted IPs
+   - TOR/VPN endpoints
+   - Known malicious sources
+
+4. Protocol Indicators:
+   - DNS queries
+   - TLS traffic
+   - NTP communications
+
+5. Service-Specific Alerts:
+   - Bot activities
+   - Scanning detection
+   - Automation tool usage
+
+MATCHING RULES:
+1. Exact matches take priority
+2. Consider semantic equivalence for near-matches
+3. Pattern-based matching for similar alerts
+4. Context-aware template selection
+
+Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
+
+        human_template = """Available Templates:
+{templates}
+
+Alert Text:
+{alert_text}
+
+Return exact matching template name:"""
+        
+        self.matcher_chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def extract_status(self, text: str) -> Optional[str]:
+        """Extract status information from alert text using enhanced pattern matching"""
+        # Try multiple status patterns
+        patterns = [
+            r"Status:([^\n]*)",
+            r"Current Status:([^\n]*)",
+            r"Alert Status:([^\n]*)",
+            r"Status\s*:\s*([^:\n]*)",
+        ]
+        
+        for pattern in patterns:
+            status_match = re.search(pattern, text, re.IGNORECASE)
+            if status_match:
+                return status_match.group(1).strip()
+        return None
+
+    def match_template(self, alert_text: str) -> str:
+        """Match alert text to template with improved accuracy"""
+        try:
+            result = self.matcher_chain.run(
+                templates="\n".join(self.templates),
+                alert_text=alert_text
+            ).strip()
+            return result if result in self.templates else "Unknown Template"
+        except Exception as e:
+            return "Unknown Template"
+
 class QueryClassifier:
-    """Dedicated classifier for analyzing user queries only"""
+    """Dedicated classifier for analyzing user queries"""
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
             model_name="gpt-4o-mini",
@@ -76,14 +167,7 @@ CLASSIFY AS PHASE_2 IF THE QUERY:
 - Involves customer-specific data
 
 RESPONSE FORMAT:
-Return ONLY 'PHASE_1' or 'PHASE_2' based on the query type.
-
-EXAMPLES:
-Query: "What are best practices for handling TOR IP alerts?"
-Response: PHASE_1
-
-Query: "Why did we see this specific IP scanning our network at 2:30 PM?"
-Response: PHASE_2"""
+Return ONLY 'PHASE_1' or 'PHASE_2' based on the query type."""
 
         human_template = """USER QUERY: {query}
 
@@ -102,6 +186,7 @@ CLASSIFY AS PHASE_1 OR PHASE_2:"""
         return result == "PHASE_1"
 
 class CrispResponseGenerator:
+    """Enhanced response generator for security queries"""
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
             model_name="gpt-4o-mini",
@@ -143,52 +228,8 @@ class CrispResponseGenerator:
     def generate(self, alert_summary: str, query: str) -> str:
         return self.chain.run(alert_summary=alert_summary, query=query).strip()
 
-class TemplateMatcher:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_matcher()
-        self.templates = SITREP_TEMPLATES
-
-    def setup_matcher(self):
-        system_template = """You are a specialized security alert template matcher focused on exact pattern matching.
-        
-        Key matching criteria:
-        1. Authentication patterns (Kerberos, sign-ins, access)
-        2. Traffic patterns (anomalous, internal, internet)
-        3. IP-based threats (blacklisted, tor, spam, malware)
-        4. Protocol indicators (DNS, TLS, NTP)
-        5. Specific services (bots, scanners, anonymization)
-        
-        Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
-
-        human_template = """Available Templates:
-        {templates}
-
-        Alert Text:
-        {alert_text}
-
-        Return exact matching template name:"""
-        
-        self.matcher_chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def match_template(self, alert_text: str) -> str:
-        result = self.matcher_chain.run(
-            templates="\n".join(self.templates),
-            alert_text=alert_text
-        ).strip()
-        return result if result in self.templates else "Unknown Template"
-
 class SitrepAnalyzer:
+    """Main analyzer class with enhanced template matching"""
     def __init__(self):
         try:
             self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
@@ -198,20 +239,16 @@ class SitrepAnalyzer:
             st.error(f"Failed to initialize analyzer: {str(e)}")
             st.stop()
 
-    def extract_status(self, text: str) -> Optional[str]:
-        status_match = re.search(r"Status:([^\n]*)", text, re.IGNORECASE)
-        return status_match.group(1).strip() if status_match else None
-
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
+            # Enhanced template matching
             template = self.template_matcher.match_template(alert_summary)
-            status = self.extract_status(alert_summary)
+            status = self.template_matcher.extract_status(alert_summary)
             
             query_response = None
             is_phase_1 = False
             
             if client_query:
-                # Only analyze the query itself, not the alert summary
                 is_phase_1 = self.query_classifier.classify(client_query)
                 if is_phase_1:
                     query_response = self.response_generator.generate(alert_summary, client_query)
@@ -228,13 +265,14 @@ class SitrepAnalyzer:
             return {"error": f"Analysis error: {str(e)}"}
 
 def main():
-    st.set_page_config(page_title="Alert Analyzer", layout="wide")
+    st.set_page_config(page_title="Enhanced Alert Analyzer", layout="wide")
     
+    # Enhanced CSS styling
     st.markdown("""
         <style>
         .header-box { 
             background: #f8f9fa; 
-            padding: 10px; 
+            padding: 15px; 
             border-radius: 5px; 
             margin: 10px 0;
             border-left: 4px solid #2a5298;
@@ -260,36 +298,51 @@ def main():
             background-color: #f8d7da;
             color: #721c24;
         }
+        .template-match {
+            font-weight: bold;
+            color: #2a5298;
+        }
+        .status-indicator {
+            font-weight: bold;
+            color: #28a745;
+        }
         </style>
         """, unsafe_allow_html=True)
     
     try:
+        # Layout setup
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            alert_summary = st.text_area("Summary Analysis", height=300)
+            st.markdown("### Alert Summary Analysis")
+            alert_summary = st.text_area("Enter the alert summary for analysis:", height=300)
 
         with col2:
-            client_query = st.text_area("User Query", height=150)
+            st.markdown("### User Query (Optional)")
+            client_query = st.text_area("Enter any specific questions about the alert:", height=150)
         
-        if st.button("Analyze", type="primary"):
+        if st.button("Analyze Alert", type="primary"):
             if not alert_summary:
-                st.error("Please enter alert details.")
+                st.error("Please enter alert details to analyze.")
                 return
             
             analyzer = SitrepAnalyzer()
-            with st.spinner("Analyzing..."):
+            with st.spinner("Analyzing alert details..."):
                 result = analyzer.analyze_sitrep(alert_summary, client_query)
                 
                 if "error" in result:
                     st.error(result["error"])
                 else:
-                    # Show template and status in header box
+                    # Display template and status information
                     header_content = []
                     if result["template"] != "Unknown Template":
-                        header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
+                        header_content.append(
+                            f'<span class="template-match">Matched Template:</span> {result["template"]}'
+                        )
                     if result.get("status"):
-                        header_content.append(f"<strong>Status:</strong> {result['status']}")
+                        header_content.append(
+                            f'<span class="status-indicator">Status:</span> {result["status"]}'
+                        )
                     
                     if header_content:
                         st.markdown(
@@ -299,7 +352,7 @@ def main():
                             unsafe_allow_html=True
                         )
                     
-                    # Show phase classification and response if query exists
+                    # Display query response if provided
                     if result.get("query_response"):
                         phase_class = "phase-1" if result["is_phase_1"] else "phase-2"
                         phase_text = "Phase 1 - Automated Response" if result["is_phase_1"] else "Phase 2 - Requires Analyst"
