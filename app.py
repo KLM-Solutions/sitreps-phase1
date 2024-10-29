@@ -1,7 +1,5 @@
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
 from langchain.chains import LLMChain
 from langchain.prompts.chat import (
     ChatPromptTemplate,
@@ -42,11 +40,12 @@ SITREP_TEMPLATES = [
     "Kerberos Authentication Abuse"
 ]
 
-class CrispResponseGenerator:
-    def __init__(self, openai_api_key: str):
+class SecurityResponseGenerator:
+    """Enhanced response generator for security queries"""
+    def __init__(self, openai_api_key: str, model_name: str = "gpt-4o-mini", temperature: float = 0.1):
         self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
+            model_name=model_name,
+            temperature=temperature,
             openai_api_key=openai_api_key
         )
         self.setup_chain()
@@ -96,21 +95,6 @@ When responding, follow this structure:
   * Explain why the query requires specialized attention
   * Note any specific information needed for analysis
 
-# Example Interaction
-User Query: "What are the best practices for NTP configuration?"
-
-Assistant Response:
-Query Type: GENERAL
-Confidence: HIGH
-Response Category: Best Practice
-Response: Here are the industry-standard NTP configuration best practices:
-1. Use multiple NTP servers (minimum 4) for redundancy
-2. Implement NTP authentication
-3. Use latest NTP version
-4. Configure proper access controls
-5. Monitor for time drift
-Next Steps: For implementation in your specific environment, consider reviewing official NTP documentation.
-
 # Important Notes:
 - Always prioritize security best practices
 - Maintain professional tone
@@ -120,10 +104,12 @@ Next Steps: For implementation in your specific environment, consider reviewing 
 
 End your responses with a clear indication of whether follow-up with a Customer Analyst is recommended."""
 
-        human_template = """Alert Context: {alert_summary}
-Query: {query}
+        human_template = """Context Information:
+Alert Type: {alert_type}
+Alert Summary: {alert_summary}
+Client Query: {query}
 
-Provide a comprehensive response following the specified format:"""
+Generate a comprehensive response following the specified format and guidelines."""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -133,10 +119,85 @@ Provide a comprehensive response following the specified format:"""
             ])
         )
 
-    def generate(self, alert_summary: str, query: str) -> str:
-        return self.chain.run(alert_summary=alert_summary, query=query).strip()
+    def parse_response(self, response: str) -> Dict[str, str]:
+        components = {
+            'query_type': None,
+            'confidence': None,
+            'response_category': None,
+            'response': None,
+            'next_steps': None
+        }
+        
+        query_type_match = re.search(r"Query Type:\s*(.*?)(?:\n|$)", response)
+        confidence_match = re.search(r"Confidence:\s*(.*?)(?:\n|$)", response)
+        category_match = re.search(r"Response Category:\s*(.*?)(?:\n|$)", response)
+        response_match = re.search(r"Response:(.*?)(?=Next Steps:|$)", response, re.DOTALL)
+        next_steps_match = re.search(r"Next Steps:(.*?)$", response, re.DOTALL)
+        
+        if query_type_match:
+            components['query_type'] = query_type_match.group(1).strip()
+        if confidence_match:
+            components['confidence'] = confidence_match.group(1).strip()
+        if category_match:
+            components['response_category'] = category_match.group(1).strip()
+        if response_match:
+            components['response'] = response_match.group(1).strip()
+        if next_steps_match:
+            components['next_steps'] = next_steps_match.group(1).strip()
+            
+        return components
+
+    def generate_response(self, query: str, alert_type: Optional[str] = None, alert_summary: Optional[str] = None) -> Dict[str, str]:
+        try:
+            raw_response = self.chain.run(
+                query=query,
+                alert_type=alert_type or "Not Specified",
+                alert_summary=alert_summary or "Not Provided"
+            )
+            
+            structured_response = self.parse_response(raw_response)
+            structured_response['success'] = True
+            structured_response['raw_response'] = raw_response
+            
+            return structured_response
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'query_type': None,
+                'confidence': None,
+                'response_category': None,
+                'response': None,
+                'next_steps': None,
+                'raw_response': None
+            }
+
+    def format_response(self, response_dict: Dict[str, str]) -> str:
+        if not response_dict.get('success', True):
+            return f"Error generating response: {response_dict.get('error', 'Unknown error')}"
+            
+        formatted_parts = []
+        
+        if response_dict.get('query_type'):
+            formatted_parts.append(f"Query Type: {response_dict['query_type']}")
+        
+        if response_dict.get('confidence'):
+            formatted_parts.append(f"Confidence: {response_dict['confidence']}")
+            
+        if response_dict.get('response_category'):
+            formatted_parts.append(f"Response Category: {response_dict['response_category']}")
+            
+        if response_dict.get('response'):
+            formatted_parts.append(f"Response:\n{response_dict['response']}")
+            
+        if response_dict.get('next_steps'):
+            formatted_parts.append(f"Next Steps:\n{response_dict['next_steps']}")
+            
+        return "\n\n".join(formatted_parts)
 
 class PhaseClassifier:
+    """Classifier for determining if queries can be handled in Phase 1"""
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
             model_name="gpt-4o-mini",
@@ -170,25 +231,7 @@ class PhaseClassifier:
 # Response Format
 RESPOND ONLY with exactly one of these two options:
 - "PHASE_1" for general queries
-- "NOT_PHASE_1" for specific queries
-
-# Example Classifications
-PHASE_1 queries:
-- "What are best practices for NTP configuration?"
-- "Is IP blocking effective for this type of threat?"
-- "What's the recommended way to handle these alerts?"
-- "Should we enable SSL/TLS inspection?"
-- "What threshold should we set for alerts?"
-
-NOT_PHASE_1 queries:
-- "Can you check our logs from yesterday?"
-- "Why is this specific IP showing up?"
-- "What's causing these errors in our system?"
-- "Can you investigate this incident?"
-- "What's wrong with our current setup?"
-
-Remember: Even if query mentions specific tools (firewall, IPs, SSL/TLS), 
-it's still PHASE_1 if asking about general effectiveness or best practices."""
+- "NOT_PHASE_1" for specific queries"""
 
         human_template = """Alert Context: {alert_summary}
 Query: {query}
@@ -209,6 +252,7 @@ Respond ONLY with PHASE_1 or NOT_PHASE_1:"""
         return result == "PHASE_1"
 
 class TemplateMatcher:
+    """Matcher for identifying alert templates"""
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
             model_name="gpt-4o-mini",
@@ -254,9 +298,10 @@ class TemplateMatcher:
         return result if result in self.templates else "Unknown Template"
 
 class SitrepAnalyzer:
+    """Main class for coordinating alert analysis"""
     def __init__(self):
         self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
-        self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
+        self.response_generator = SecurityResponseGenerator(OPENAI_API_KEY)
         self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
 
     def extract_status(self, text: str) -> Optional[str]:
@@ -274,7 +319,12 @@ class SitrepAnalyzer:
             if client_query:
                 is_phase_1 = self.phase_classifier.classify(alert_summary, client_query)
                 if is_phase_1:
-                    query_response = self.response_generator.generate(alert_summary, client_query)
+                    response_dict = self.response_generator.generate_response(
+                        query=client_query,
+                        alert_type=template,
+                        alert_summary=alert_summary
+                    )
+                    query_response = self.response_generator.format_response(response_dict)
                 else:
                     query_response = "⚠️ Requires analyst review - beyond Phase 1 automation scope."
             
@@ -288,6 +338,7 @@ class SitrepAnalyzer:
             return {"error": f"Error: {str(e)}"}
 
 def main():
+    """Streamlit UI setup and main application flow"""
     st.set_page_config(page_title="Alert Analyzer", layout="wide")
     
     st.markdown("""
