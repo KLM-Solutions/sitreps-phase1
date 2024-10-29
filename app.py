@@ -100,6 +100,9 @@ class QueryPhaseAnalyzer:
         system_template = """Determine if a security query can be answered with general knowledge.
 
 Return EXACTLY "PHASE_1" if the query:
+
+We are looking to automate customer inquiries that are general in nature, using an AI model. Specifically, when a customer asks a question in general terms—for example, requesting more information, guidance, or best practices (e.g., "How can we mitigate this?" "What are the best practices?" "What would you recommend?")—the AI model should automatically generate a response based on information on the internet. These types of questions are typically not specific to customer logs and don't require detailed analysis of their particular system or logs.
+
 - Asks about security best practices
 - Compares security solutions
 - Seeks standard recommendations
@@ -162,7 +165,6 @@ Guidelines:
 3. Focus on immediate steps
 4. Simple, clear language
 
-We are looking to automate customer inquiries that are general in nature, using an AI model. Specifically, when a customer asks a question in general terms—for example, requesting more information, guidance, or best practices (e.g., "How can we mitigate this?" "What are the best practices?" "What would you recommend?")—the AI model should automatically generate a response based on information on the internet. These types of questions are typically not specific to customer logs and don't require detailed analysis of their particular system or logs.
 
 Format:
 Risk: [Brief risk description]
