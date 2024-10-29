@@ -132,7 +132,7 @@ Provide response:"""
             }
 
 class PhaseClassifier:
-    """Classifier for Phase 1 queries"""
+    """Classifier for Phase 1 queries with improved recognition of comparison questions"""
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
             model_name="gpt-4o-mini",
@@ -144,17 +144,33 @@ class PhaseClassifier:
     def setup_classifier(self):
         system_template = """Classify if a security query can be handled with general knowledge (Phase 1) or needs specific analysis.
 
-Phase 1 queries ask about:
+Phase 1 queries include:
 - General security practices
 - Standard recommendations
 - Common configurations
 - Basic preventive measures
+- Comparisons between security controls
+- Questions about effectiveness of security measures
+- Best practice recommendations
+- Security technology comparisons
+- General mitigation strategies
+- Questions about security tool capabilities
 
 NOT Phase 1 queries involve:
 - Specific log analysis
 - Custom configurations
 - Technical debugging
 - Environment-specific issues
+- Detailed performance metrics
+- Specific incident investigation
+- Customer-specific architecture questions
+
+Examples of Phase 1:
+- "Is SSL decryption better than IP blocking?"
+- "Which security control is more effective?"
+- "What's the best practice for this type of threat?"
+- "Should we use solution A or solution B?"
+- "Will this security measure help?"
 
 Return only PHASE_1 or NOT_PHASE_1"""
 
