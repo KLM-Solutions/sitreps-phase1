@@ -156,38 +156,6 @@ class SitrepAnalyzer:
             Alert: {alert_summary}
             Fields: {fields}
             Query: {query}
-
-            FORMAT:
-            ## Threat Summary
-            • [Single line threat level]
-            • [Key finding in 3-4 words]
-
-            ## Impact Assessment
-            • [Business impact in 3-4 words]
-            • [Risk level in 2-3 words]
-
-            ## Required Actions
-            • [Action commands in 3-4 words]
-
-            ## Query Response
-            • [Direct answer in 3-4 words]"""
-        else:
-            # Modified human template for standard analysis to be more concise
-            human_template = """
-            Alert: {alert_summary}
-            Fields: {fields}
-
-            FORMAT:
-            ## Threat Summary
-            • [Single line threat level]
-            • [Key finding in 3-4 words]
-
-            ## Impact Assessment
-            • [Business impact in 3-4 words]
-            • [Risk level in 2-3 words]
-
-            ## Required Actions
-            • [Action commands in 3-4 words]"""
         
         human_message = HumanMessagePromptTemplate.from_template(human_template)
         chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
