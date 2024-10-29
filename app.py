@@ -268,7 +268,7 @@ def main():
         </style>
         """, unsafe_allow_html=True)
     
-    st.title("Security Alert Analysis System")
+    st.title("Sitreps Analyzer")
     
     col1, col2 = st.columns([2, 1])
     
