@@ -52,58 +52,7 @@ class CrispResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """You are a security expert providing direct, actionable responses.
-    
-        Response Guidelines:
-        1. State the effectiveness of suggested approaches
-        2. Provide alternative or complementary solutions
-        3. Explain briefly why certain approaches are better
-        4. Be specific but avoid customer-specific details
-        5. Focus on industry best practices
-        6. Be direct and concise
-        7. Avoid generic advice
-        
-        Format:
-        - Start with direct answer about suggested approach
-        - List better or complementary solutions if applicable
-        - Include brief technical justification if needed
-        
-        Example Good Response:
-        "IP blocking provides limited protection. Enable SSL/TLS inspection with certificate validation and set threshold alerts for suspicious traffic patterns at 100 requests/minute."
-        
-        Example Bad Response:
-        "You should consider multiple approaches including IP blocking which can help in some cases, and also think about SSL/TLS decryption as it might provide better visibility..."""
-
-        human_template = """Alert Context: {alert_summary}
-        Query: {query}
-        
-        Provide direct technical response:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def generate(self, alert_summary: str, query: str) -> str:
-        return self.chain.run(alert_summary=alert_summary, query=query).strip()
-
-class PhaseClassifier:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_classifier()
-
-    def setup_classifier(self):
-        system_template = """You are a security query classifier. 
-
-       # System Context
-You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
+        system_template = """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
 1. Determine if a query is general or specific
 2. Provide standardized responses for general queries
 3. Indicate when a query needs human analyst attention
@@ -127,13 +76,125 @@ You are an AI assistant specialized in handling general customer inquiries about
   * Unique implementation details
 
 # Response Format
-Return ONLY 'PHASE_1' for general queries that can be automated, or 'PHASE_2' for specific queries requiring analyst review.
-"""
+When responding, follow this structure:
+1. Query Type: [GENERAL or SPECIFIC]
+2. Confidence: [HIGH or MEDIUM or LOW]
+3. Response Category: [Best Practice/Mitigation/Recommendation/Prevention]
+4. Response: [Your detailed response]
+5. Next Steps: [Additional recommendations or escalation notes]
+
+# Response Guidelines
+- For GENERAL queries:
+  * Provide industry-standard recommendations
+  * Include relevant security frameworks or standards
+  * Offer clear, actionable steps
+  * Link to official documentation when applicable
+  * Keep responses vendor-neutral unless specifically asked
+
+- For SPECIFIC queries:
+  * Indicate need for Customer Analyst review
+  * Explain why the query requires specialized attention
+  * Note any specific information needed for analysis
+
+# Example Interaction
+User Query: "What are the best practices for NTP configuration?"
+
+Assistant Response:
+Query Type: GENERAL
+Confidence: HIGH
+Response Category: Best Practice
+Response: Here are the industry-standard NTP configuration best practices:
+1. Use multiple NTP servers (minimum 4) for redundancy
+2. Implement NTP authentication
+3. Use latest NTP version
+4. Configure proper access controls
+5. Monitor for time drift
+Next Steps: For implementation in your specific environment, consider reviewing official NTP documentation.
+
+# Important Notes:
+- Always prioritize security best practices
+- Maintain professional tone
+- Be clear when escalation is needed
+- Avoid making assumptions about customer environment
+- Stay within scope of general recommendations
+
+End your responses with a clear indication of whether follow-up with a Customer Analyst is recommended."""
 
         human_template = """Alert Context: {alert_summary}
 Query: {query}
 
-Classify as PHASE_1 or PHASE_2:"""
+Provide a comprehensive response following the specified format:"""
+
+        self.chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def generate(self, alert_summary: str, query: str) -> str:
+        return self.chain.run(alert_summary=alert_summary, query=query).strip()
+
+class PhaseClassifier:
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.setup_classifier()
+
+    def setup_classifier(self):
+        system_template = """You are a security query classifier specialized in analyzing customer queries.
+
+# Classification Rules
+- CLASSIFY AS PHASE_1 when query asks for:
+  * Industry best practices
+  * General recommendations
+  * Standard mitigation strategies
+  * Common security guidelines
+  * Prevention techniques
+  * General configuration advice
+  * Effectiveness of security measures
+  * Comparison of security approaches
+
+- CLASSIFY AS NOT_PHASE_1 when query involves:
+  * Specific customer logs analysis
+  * Custom configurations review
+  * System-specific troubleshooting
+  * Detailed technical debugging
+  * Customer-specific setups
+  * Unique implementation details
+
+# Response Format
+RESPOND ONLY with exactly one of these two options:
+- "PHASE_1" for general queries
+- "NOT_PHASE_1" for specific queries
+
+# Example Classifications
+PHASE_1 queries:
+- "What are best practices for NTP configuration?"
+- "Is IP blocking effective for this type of threat?"
+- "What's the recommended way to handle these alerts?"
+- "Should we enable SSL/TLS inspection?"
+- "What threshold should we set for alerts?"
+
+NOT_PHASE_1 queries:
+- "Can you check our logs from yesterday?"
+- "Why is this specific IP showing up?"
+- "What's causing these errors in our system?"
+- "Can you investigate this incident?"
+- "What's wrong with our current setup?"
+
+Remember: Even if query mentions specific tools (firewall, IPs, SSL/TLS), 
+it's still PHASE_1 if asking about general effectiveness or best practices."""
+
+        human_template = """Alert Context: {alert_summary}
+Query: {query}
+
+Classify if this query can be answered with general security knowledge. 
+Respond ONLY with PHASE_1 or NOT_PHASE_1:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -194,13 +255,9 @@ class TemplateMatcher:
 
 class SitrepAnalyzer:
     def __init__(self):
-        try:
-            self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
-            self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
-            self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
-        except Exception as e:
-            st.error(f"Failed to initialize analyzer: {str(e)}")
-            st.stop()
+        self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
+        self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
+        self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
 
     def extract_status(self, text: str) -> Optional[str]:
         status_match = re.search(r"Status:([^\n]*)", text, re.IGNORECASE)
@@ -228,7 +285,7 @@ class SitrepAnalyzer:
                 "query_response": query_response
             }
         except Exception as e:
-            return {"error": f"Analysis error: {str(e)}"}
+            return {"error": f"Error: {str(e)}"}
 
 def main():
     st.set_page_config(page_title="Alert Analyzer", layout="wide")
@@ -252,53 +309,53 @@ def main():
         </style>
         """, unsafe_allow_html=True)
     
-    try:
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            alert_summary = st.text_area("Summary Analysis", height=300)
+    st.title("Security Alert Analysis System")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        alert_summary = st.text_area("Alert Summary (paste SITREP here)", height=300)
 
-        with col2:
-            client_query = st.text_area("User Query", height=150)
+    with col2:
+        client_query = st.text_area("Client Query", height=150,
+                                  help="Enter the client's question or request here")
+    
+    if st.button("Analyze", type="primary"):
+        if not alert_summary:
+            st.error("Please enter alert details.")
+            return
         
-        if st.button("Analyze", type="primary"):
-            if not alert_summary:
-                st.error("Please enter alert details.")
-                return
+        analyzer = SitrepAnalyzer()
+        with st.spinner("Analyzing..."):
+            result = analyzer.analyze_sitrep(alert_summary, client_query)
             
-            analyzer = SitrepAnalyzer()
-            with st.spinner("Analyzing..."):
-                result = analyzer.analyze_sitrep(alert_summary, client_query)
+            if "error" in result:
+                st.error(result["error"])
+            else:
+                # Show template and status in header box if they exist
+                header_content = []
+                if result["template"] != "Unknown Template":
+                    header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
+                if result.get("status"):
+                    header_content.append(f"<strong>Status:</strong> {result['status']}")
                 
-                if "error" in result:
-                    st.error(result["error"])
-                else:
-                    # Show template and status in header box if they exist
-                    header_content = []
-                    if result["template"] != "Unknown Template":
-                        header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
-                    if result.get("status"):
-                        header_content.append(f"<strong>Status:</strong> {result['status']}")
-                    
-                    if header_content:
-                        st.markdown(
-                            '<div class="header-box">' + 
-                            '<br>'.join(header_content) + 
-                            '</div>', 
-                            unsafe_allow_html=True
-                        )
-                    
-                    # Show response if exists
-                    if result.get("query_response"):
-                        st.markdown(
-                            '<div class="response-box">' +
-                            '<strong>USER RESPONSE:</strong><br>' +
-                            f'{result["query_response"]}' +
-                            '</div>',
-                            unsafe_allow_html=True
-                        )
-    except Exception as e:
-        st.error(f"Application error: {str(e)}")
+                if header_content:
+                    st.markdown(
+                        '<div class="header-box">' + 
+                        '<br>'.join(header_content) + 
+                        '</div>', 
+                        unsafe_allow_html=True
+                    )
+                
+                # Show response if exists
+                if result.get("query_response"):
+                    st.markdown(
+                        '<div class="response-box">' +
+                        '<strong>RESPONSE:</strong><br>' +
+                        f'{result["query_response"]}' +
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
 
 if __name__ == "__main__":
     main()
