@@ -8,7 +8,7 @@ from langchain.prompts.chat import (
 )
 import openai
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 # API Configuration
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -40,122 +40,6 @@ SITREP_TEMPLATES = [
     "Kerberos Authentication Abuse"
 ]
 
-class QueryPhaseAnalyzer:
-    """Dedicated analyzer for determining query phase"""
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_analyzer()
-
-    def setup_analyzer(self):
-        system_template = """You are a query phase analyzer for security questions. 
-Your only job is to determine if a question can be answered with general security knowledge.
-
-RESPOND EXACTLY in this format:
-PHASE: [1 or 2]
-REASON: [One brief sentence why]
-
-Phase 1 Queries (Return PHASE: 1):
-- General best practices
-- Security tool comparisons
-- Standard configurations
-- Common mitigation strategies
-- Technology effectiveness questions
-- Security measure comparisons
-- Basic security concepts
-- General recommendations
-- Common security protocols
-- Standard security features
-
-Phase 2 Queries (Return PHASE: 2):
-- Specific log analysis
-- Environment-specific issues
-- Custom configurations
-- Technical debugging
-- Specific incident details
-- Performance tuning
-- Custom architecture
-- Specific metrics analysis
-"""
-
-        human_template = """Query: {query}
-Context: {context}
-
-Determine query phase:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def analyze_phase(self, query: str, context: str = "") -> Dict[str, str]:
-        try:
-            response = self.chain.run(query=query, context=context)
-            phase_match = re.search(r"PHASE:\s*(\d)", response)
-            reason_match = re.search(r"REASON:\s*(.+)", response)
-            
-            return {
-                "phase": phase_match.group(1) if phase_match else "2",
-                "reason": reason_match.group(1).strip() if reason_match else "Could not determine reason",
-                "raw_response": response
-            }
-        except Exception as e:
-            return {"phase": "2", "reason": f"Error in analysis: {str(e)}"}
-
-class SecurityResponseGenerator:
-    """Response generator for security queries"""
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_chain()
-
-    def setup_chain(self):
-        system_template = """You are a security expert providing brief, actionable responses.
-
-Guidelines:
-1. Maximum 3 sentences
-2. Focus on immediate action
-3. Clear, direct language
-4. Include a recommendation
-
-Format your response as:
-ANALYSIS: [One sentence analysis]
-RECOMMENDATION: [Clear action to take]"""
-
-        human_template = """Alert Type: {alert_type}
-Context: {context}
-Query: {query}
-
-Provide response:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def generate_response(self, query: str, alert_type: str = None, context: str = None) -> Dict[str, str]:
-        try:
-            response = self.chain.run(
-                query=query,
-                alert_type=alert_type or "Not Specified",
-                context=context or "No additional context"
-            )
-            return {'success': True, 'response': response.strip()}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-
 class TemplateMatcher:
     """Template matcher for alerts"""
     def __init__(self, openai_api_key: str):
@@ -168,12 +52,13 @@ class TemplateMatcher:
         self.templates = SITREP_TEMPLATES
 
     def setup_matcher(self):
-        system_template = """Match the alert to the exact template name. Return only the template name."""
+        system_template = "Given the alert text, return the exact matching template name. If no match, return 'Unknown Template'."
 
         human_template = """Templates:
 {templates}
 
-Alert: {alert_text}
+Alert Text:
+{alert_text}
 
 Matching template:"""
         
@@ -192,8 +77,144 @@ Matching template:"""
         ).strip()
         return result if result in self.templates else "Unknown Template"
 
+class QueryPhaseAnalyzer:
+    """Analyzer for determining query phase"""
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.setup_analyzer()
+
+    def setup_analyzer(self):
+        system_template = """Determine if the security query can be answered with general knowledge.
+
+Return EXACTLY "PHASE_1" if the query:
+- Asks about general best practices
+- Compares security approaches
+- Seeks standard recommendations
+- Asks about effectiveness of security controls
+- Questions about tool capabilities
+- General mitigation strategies
+- Basic security concepts
+
+Return EXACTLY "NOT_PHASE_1" only if the query needs:
+- Specific log analysis
+- Customer environment details
+- Technical debugging
+- Incident investigation
+
+Example PHASE_1 queries:
+"Is SSL better than IP blocking?"
+"What's the best way to handle this type of alert?"
+"Which security measure is more effective?"
+"Should we implement this control?"
+
+Return only PHASE_1 or NOT_PHASE_1."""
+
+        human_template = """Query: {query}
+Alert Context: {context}
+
+Classification:"""
+
+        self.chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def analyze_phase(self, query: str, context: str = "") -> bool:
+        try:
+            response = self.chain.run(query=query, context=context).strip()
+            return response == "PHASE_1"
+        except Exception:
+            return False
+
+class SecurityResponseGenerator:
+    """Generator for security response"""
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.setup_chain()
+
+    def setup_chain(self):
+        system_template = """Provide extremely concise security responses.
+
+Rules:
+1. Maximum 2-3 sentences
+2. Be direct and actionable
+3. Focus on immediate steps
+4. Simple, clear language
+
+Format:
+Risk: [Brief risk description]
+Action: [Specific action to take]"""
+
+        human_template = """Alert: {alert_type}
+Context: {context}
+Query: {query}
+
+Response:"""
+
+        self.chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def parse_response(self, response: str) -> Dict[str, str]:
+        components = {
+            'risk': None,
+            'action': None
+        }
+        
+        risk_match = re.search(r"Risk:(.*?)(?=Action:|$)", response, re.DOTALL)
+        action_match = re.search(r"Action:(.*?)$", response, re.DOTALL)
+        
+        if risk_match:
+            components['risk'] = risk_match.group(1).strip()
+        if action_match:
+            components['action'] = action_match.group(1).strip()
+            
+        return components
+
+    def generate_response(self, query: str, alert_type: str = None, context: str = None) -> Dict[str, str]:
+        try:
+            raw_response = self.chain.run(
+                query=query,
+                alert_type=alert_type or "Not Specified",
+                context=context or "No additional context"
+            )
+            
+            structured_response = self.parse_response(raw_response)
+            return {'success': True, 'structured_response': structured_response}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def format_response(self, response_dict: Dict[str, str]) -> str:
+        if not response_dict.get('success', True):
+            return f"Error: {response_dict.get('error', 'Unknown error')}"
+            
+        components = response_dict.get('structured_response', {})
+        formatted_parts = []
+        
+        if components.get('risk'):
+            formatted_parts.append(f"Risk: {components['risk']}")
+        if components.get('action'):
+            formatted_parts.append(f"Action: {components['action']}")
+            
+        return "\n".join(formatted_parts)
+
 class SitrepAnalyzer:
-    """Main analyzer with phase-based response handling"""
+    """Main analysis coordinator"""
     def __init__(self):
         self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
         self.phase_analyzer = QueryPhaseAnalyzer(OPENAI_API_KEY)
@@ -202,50 +223,33 @@ class SitrepAnalyzer:
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
             template = self.template_matcher.match_template(alert_summary)
-            response_info = None
-            phase_info = None
+            response = None
             
             if client_query:
-                phase_result = self.phase_analyzer.analyze_phase(client_query, alert_summary)
-                phase_info = phase_result
-                
-                if phase_result["phase"] == "1":
-                    response = self.response_generator.generate_response(
+                is_phase_1 = self.phase_analyzer.analyze_phase(client_query, alert_summary)
+                if is_phase_1:
+                    response_dict = self.response_generator.generate_response(
                         query=client_query,
                         alert_type=template,
                         context=alert_summary
                     )
-                    response_info = response.get('response') if response.get('success') else None
+                    response = self.response_generator.format_response(response_dict)
                 else:
-                    response_info = "⚠️ This query requires analyst review - beyond Phase 1 automation scope."
+                    response = "⚠️ This query requires analyst review - beyond Phase 1 automation scope."
             
             return {
                 "template": template,
-                "phase_info": phase_info,
-                "response": response_info
+                "response": response
             }
         except Exception as e:
             return {"error": f"Error: {str(e)}"}
 
 def main():
-    """Streamlit UI with improved response display"""
+    """Streamlit UI setup"""
     st.set_page_config(page_title="Alert Analyzer", layout="wide")
     
     st.markdown("""
         <style>
-        .template-box {
-            background-color: #f0f2f6;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .phase-box {
-            background-color: #e3f2fd;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-            border-left: 4px solid #1976D2;
-        }
         .response-box {
             background-color: white;
             padding: 20px;
@@ -285,36 +289,14 @@ def main():
             
             if "error" in result:
                 st.error(result["error"])
-            else:
-                # Show template match
-                if result["template"] != "Unknown Template":
-                    st.markdown(
-                        f'<div class="template-box">'
-                        f'<strong>Matched Template:</strong> {result["template"]}'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-                
-                # Show phase information
-                if result.get("phase_info"):
-                    phase_text = "Phase 1 - Automated Response" if result["phase_info"]["phase"] == "1" else "Phase 2 - Requires Analyst"
-                    st.markdown(
-                        f'<div class="phase-box">'
-                        f'<strong>Query Classification:</strong> {phase_text}<br>'
-                        f'<strong>Reason:</strong> {result["phase_info"]["reason"]}'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-                
-                # Show response
-                if result.get("response"):
-                    st.markdown(
-                        '<div class="response-box">'
-                        '<div class="response-header">Query Response:</div>'
-                        f'{result["response"]}'
-                        '</div>',
-                        unsafe_allow_html=True
-                    )
+            elif result.get("response"):
+                st.markdown(
+                    '<div class="response-box">'
+                    '<div class="response-header">Query Response:</div>'
+                    f'{result.get("response")}'
+                    '</div>',
+                    unsafe_allow_html=True
+                )
 
 if __name__ == "__main__":
     main()
