@@ -16,7 +16,7 @@ import re
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 openai.api_key = OPENAI_API_KEY
 
-# Template definitions remain the same
+# Template definitions
 SITREP_TEMPLATES = [
     "Anomalous Internal Traffic",
     "445 Blacklisted IP",
@@ -52,22 +52,26 @@ class CrispResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """You are an expert security analyst providing ultra-concise responses. Your responses must be:
-1. Single sentence, maximum 20 words
-2. Direct and actionable
-3. Focused on immediate security implications
-4. Technical but clear
-5. No bullet points or lists
+        system_template = """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Provide direct, single-sentence responses focused on actionable insights or recommendations.
 
-For customer-specific queries requiring detailed investigation, respond only with: "Requires analyst review - escalating for detailed investigation."
+For queries about:
+* Industry best practices
+* General recommendations
+* Standard mitigation strategies
+* Common security guidelines
+* Prevention techniques
+* Educational information
+* High-level process explanations
 
-Example format:
-User Response: [Single concise technical recommendation or insight]"""
+Provide a clear, technical response that directly addresses the query in one sentence.
+
+Format your response as:
+User Response: [Single concise technical response]"""
 
         human_template = """Alert Context: {alert_summary}
 Query: {query}
 
-Provide a single-sentence response with clear security insight or recommendation:"""
+Provide a single concise response that directly addresses the security concern or recommendation:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -79,7 +83,9 @@ Provide a single-sentence response with clear security insight or recommendation
 
     def generate(self, alert_summary: str, query: str) -> str:
         response = self.chain.run(alert_summary=alert_summary, query=query).strip()
-        return f"User Response: {response}"
+        if not response.startswith("User Response:"):
+            response = f"User Response: {response}"
+        return response
 
 class PhaseClassifier:
     def __init__(self, openai_api_key: str):
@@ -93,22 +99,45 @@ class PhaseClassifier:
     def setup_classifier(self):
         system_template = """You are a security query classifier specialized in analyzing customer queries.
 
+# Classification Rules
 - CLASSIFY AS PHASE_1 when query asks for:
-  * General security recommendations
-  * Standard practices
-  * Common configurations
-  * Basic threat assessment
+  * Industry best practices
+  * General recommendations
+  * Standard mitigation strategies
+  * Common security guidelines
+  * Prevention techniques
+  * General configuration advice
+  * Effectiveness of security measures
+  * Comparison of security approaches
 
 - CLASSIFY AS NOT_PHASE_1 when query involves:
-  * Specific log analysis
-  * Custom configurations
-  * System debugging
-  * Unique customer setups"""
+  * Specific customer logs analysis
+  * Custom configurations review
+  * System-specific troubleshooting
+  * Detailed technical debugging
+  * Customer-specific setups
+  * Unique implementation details
+
+Example PHASE_1 queries:
+- "What are best practices for handling this type of alert?"
+- "Is IP blocking effective for this threat?"
+- "What's the recommended way to respond?"
+- "Should we enable additional monitoring?"
+- "What threshold should we set?"
+
+Example NOT_PHASE_1 queries:
+- "Can you check our specific logs?"
+- "Why is this IP appearing repeatedly?"
+- "What's causing these errors in our system?"
+- "Can you investigate this specific incident?"
+- "What's wrong with our current setup?"
+
+Remember: If the query asks for general guidance or best practices, it's PHASE_1 even if it references specific tools or technologies."""
 
         human_template = """Alert Context: {alert_summary}
 Query: {query}
 
-Classify if this query can be answered with general security knowledge. 
+Based on the classification rules, is this a PHASE_1 or NOT_PHASE_1 query?
 Respond ONLY with PHASE_1 or NOT_PHASE_1:"""
 
         self.chain = LLMChain(
@@ -123,68 +152,60 @@ Respond ONLY with PHASE_1 or NOT_PHASE_1:"""
         result = self.chain.run(alert_summary=alert_summary, query=query).strip()
         return result == "PHASE_1"
 
-# Rest of the classes and functions remain exactly the same as in the previous code
-class SitrepAnalyzer:
-    def __init__(self):
-        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-        self.template_matcher_llm = ChatOpenAI(
+# Rest of the classes/functions remain the same as your previous code
+class TemplateMatcher:
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
             model_name="gpt-4o-mini",
-            temperature=0,
-            openai_api_key=OPENAI_API_KEY
+            temperature=0.1,
+            openai_api_key=openai_api_key
         )
-        self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
-        self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
-        self.setup_vector_store()
-        self.setup_template_matcher()
-    
-    def setup_vector_store(self):
-        """Initialize FAISS vector store with templates"""
-        self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
-    
-    def setup_template_matcher(self):
-        """Setup the template matching prompt"""
-        system_template = """You are a precise security alert template matcher. Your task is to:
-        1. Analyze the given security alert
-        2. Match it to the most relevant template from the provided list
-        3. Return ONLY the exact template name that matches best
-        4. If no exact match exists, return the closest matching template
+        self.setup_matcher()
+        self.templates = SITREP_TEMPLATES
 
-        Focus on key alert characteristics and pattern matching."""
+    def setup_matcher(self):
+        system_template = """You are a specialized security alert template matcher focused on exact pattern matching.
+        
+        Key matching criteria:
+        1. Authentication patterns (Kerberos, sign-ins, access)
+        2. Traffic patterns (anomalous, internal, internet)
+        3. IP-based threats (blacklisted, tor, spam, malware)
+        4. Protocol indicators (DNS, TLS, NTP)
+        5. Specific services (bots, scanners, anonymization)
+        
+        Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
 
-        human_template = """
-        AVAILABLE TEMPLATES:
+        human_template = """Available Templates:
         {templates}
 
-        ALERT TO ANALYZE:
-        {alert}
+        Alert Text:
+        {alert_text}
 
-        Return only the best matching template name from the list. No explanation needed."""
-
-        self.template_matcher_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(system_template),
-            HumanMessagePromptTemplate.from_template(human_template)
-        ])
-    
-    def find_matching_template(self, sitrep_text: str) -> str:
-        """Find most similar template using GPT-4o-mini"""
-        try:
-            chain = LLMChain(llm=self.template_matcher_llm, prompt=self.template_matcher_prompt)
-            matched_template = chain.run(
-                templates="\n".join(SITREP_TEMPLATES),
-                alert=sitrep_text
-            ).strip()
-            
-            if matched_template in SITREP_TEMPLATES:
-                return matched_template
-            return "Unknown Template"
-        except Exception as e:
-            print(f"Template matching error: {str(e)}")
-            return "Unknown Template"
-    
-    def extract_fields(self, text: str) -> Dict[str, str]:
-        """Extract various fields from the alert summary"""
-        fields = {}
+        Return exact matching template name:"""
         
+        self.matcher_chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def match_template(self, alert_text: str) -> str:
+        result = self.matcher_chain.run(
+            templates="\n".join(self.templates),
+            alert_text=alert_text
+        ).strip()
+        return result if result in self.templates else "Unknown Template"
+
+class SitrepAnalyzer:
+    def __init__(self):
+        self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
+        self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
+        self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
+
+    def extract_fields(self, text: str) -> Dict[str, str]:
+        fields = {}
         field_patterns = {
             'status': r"Status:([^\n]*)",
             'command': r"Command:([^\n]*)",
@@ -203,35 +224,37 @@ class SitrepAnalyzer:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 fields[field] = match.group(1).strip()
-        
         return fields
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-        """Complete sitrep analysis pipeline"""
-        template = self.find_matching_template(alert_summary)
-        fields = self.extract_fields(alert_summary)
-        
-        query_response = None
-        is_phase_1 = False
-        
-        if client_query:
-            is_phase_1 = self.phase_classifier.classify(alert_summary, client_query)
-            if is_phase_1:
-                query_response = self.response_generator.generate(alert_summary, client_query)
-            else:
-                query_response = "User Response: Requires analyst review - escalating for detailed investigation."
-        
-        return {
-            "template": template,
-            "fields": fields,
-            "is_phase_1": is_phase_1,
-            "query_response": query_response
-        }
+        try:
+            template = self.template_matcher.match_template(alert_summary)
+            fields = self.extract_fields(alert_summary)
+            
+            query_response = None
+            is_phase_1 = False
+            
+            if client_query:
+                is_phase_1 = self.phase_classifier.classify(alert_summary, client_query)
+                if is_phase_1:
+                    query_response = self.response_generator.generate(alert_summary, client_query)
+                else:
+                    query_response = "User Response: Requires analyst review - escalating for detailed investigation."
+            
+            return {
+                "template": template,
+                "fields": fields,
+                "is_phase_1": is_phase_1,
+                "query_response": query_response
+            }
+        except Exception as e:
+            return {"error": f"Error generating analysis: {str(e)}"}
 
+# The main() function remains exactly the same as your previous code
 def main():
     st.set_page_config(page_title="Sitreps Analyzer", layout="wide")
     
-    # Styling
+    # Styling remains the same
     st.markdown("""
         <style>
         .main-title {
