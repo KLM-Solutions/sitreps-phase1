@@ -128,66 +128,110 @@ class SitrepAnalyzer:
         return fields
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-        """Complete sitrep analysis pipeline with prioritized client query response"""
-        template = self.find_matching_template(alert_summary)
-        fields = self.extract_fields(alert_summary)
+    """Complete sitrep analysis pipeline with Phase 1 classification"""
+    template = self.find_matching_template(alert_summary)
+    fields = self.extract_fields(alert_summary)
+    
+    # Phase 1 Classification System Message
+    phase1_system_message = SystemMessagePromptTemplate.from_template(
+        """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
+1. Determine if a query is general or specific
+2. Provide standardized responses for general queries
+3. Indicate when a query needs human analyst attention
+
+# Query Classification Rules
+- HANDLE queries that ask for:
+  * Industry best practices
+  * General recommendations
+  * Standard mitigation strategies
+  * Common security guidelines
+  * Prevention techniques
+  * Educational information
+  * High-level process explanations
+
+- ESCALATE queries that involve:
+  * Specific customer logs
+  * Custom configurations
+  * System-specific issues
+  * Detailed technical debugging
+  * Customer-specific setups
+  * Unique implementation details
+
+# Response Format
+When responding, follow this structure:
+1. Query Type: [GENERAL or SPECIFIC]
+2. Confidence: [HIGH or MEDIUM or LOW]
+3. Response Category: [Best Practice/Mitigation/Recommendation/Prevention]
+4. Response: [Your detailed response]
+5. Next Steps: [Additional recommendations or escalation notes]
+
+# Response Guidelines
+- For GENERAL queries:
+  * Provide industry-standard recommendations
+  * Include relevant security frameworks or standards
+  * Offer clear, actionable steps
+  * Keep responses vendor-neutral unless specifically asked
+
+- For SPECIFIC queries:
+  * Indicate need for Customer Analyst review
+  * Explain why the query requires specialized attention
+  * Note any specific information needed for analysis
+
+# Important Notes:
+- Always prioritize security best practices
+- Maintain professional tone
+- Be clear when escalation is needed
+- Avoid making assumptions about customer environment
+- Stay within scope of general recommendations"""
+    )
+    
+    if client_query:
+        # Modified human template to incorporate Phase 1 classification
+        human_template = """
+        Alert Details: {alert_summary}
+        Detected Fields: {fields}
+        User Query: {query}
         
-        # Dedicated response LLM with higher temperature for more natural responses
-        response_llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=OPENAI_API_KEY
+        First, classify if this is a PHASE 1 (general) or PHASE 2 (specific) query.
+        Then provide a response following the specified format.
+        For PHASE 2 queries, indicate that analyst review is needed."""
+    else:
+        human_template = """
+        Alert Details: {alert_summary}
+        Detected Fields: {fields}
+        
+        Analyze this security alert and provide key insights, focusing on general security implications and best practices."""
+    
+    # Initialize specialized response LLM
+    response_llm = ChatOpenAI(
+        model_name="gpt-4o-mini",
+        temperature=0.1,
+        openai_api_key=OPENAI_API_KEY
+    )
+    
+    human_message = HumanMessagePromptTemplate.from_template(human_template)
+    chat_prompt = ChatPromptTemplate.from_messages([phase1_system_message, human_message])
+    
+    try:
+        chain = LLMChain(llm=response_llm, prompt=chat_prompt)
+        analysis = chain.run(
+            alert_summary=alert_summary,
+            fields=fields,
+            query=client_query if client_query else ""
         )
         
-        system_message = SystemMessagePromptTemplate.from_template(
-            """You are an expert security analyst who provides clear, precise, and insightful analysis. 
-            Focus on delivering accurate, actionable information without any formatting constraints.
-            
-            Guidelines:
-            - Provide direct, clear responses
-            - Focus on what matters most
-            - Avoid repeating alert data
-            - Be precise and technical
-            - Include key insights and recommendations
-            - Tailor depth based on query complexity"""
-        )
+        # Extract phase classification from response if it contains one
+        is_phase_1 = "SPECIFIC" not in analysis.split('\n')[0].upper()
         
-        if client_query:
-            human_template = """
-            Context:
-            Alert Details: {alert_summary}
-            Detected Fields: {fields}
-            User Query: {query}
-            
-            Provide a clear, direct response addressing the user's query, incorporating relevant context from the alert."""
-        else:
-            human_template = """
-            Context:
-            Alert Details: {alert_summary}
-            Detected Fields: {fields}
-            
-            Analyze this security alert and provide key insights, focusing on what matters most."""
-        
-        human_message = HumanMessagePromptTemplate.from_template(human_template)
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
-        
-        try:
-            chain = LLMChain(llm=response_llm, prompt=chat_prompt)
-            analysis = chain.run(
-                template=template,
-                alert_summary=alert_summary,
-                fields=fields,
-                query=client_query if client_query else ""
-            )
-            
-            return {
-                "template": template,
-                "fields": fields,
-                "analysis": analysis,
-                "has_query": bool(client_query)
-            }
-        except Exception as e:
-            return {"error": f"Error generating analysis: {str(e)}"}
+        return {
+            "template": template,
+            "fields": fields,
+            "analysis": analysis,
+            "has_query": bool(client_query),
+            "is_phase_1": is_phase_1
+        }
+    except Exception as e:
+        return {"error": f"Error generating analysis: {str(e)}"}
 
 def main():
     st.set_page_config(page_title="Sitreps Analyzer", layout="wide")
