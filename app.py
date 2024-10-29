@@ -127,7 +127,7 @@ class SitrepAnalyzer:
         
         return fields
 
-   def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
+    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         """Complete sitrep analysis pipeline with prioritized client query response"""
         template = self.find_matching_template(alert_summary)
         fields = self.extract_fields(alert_summary)
