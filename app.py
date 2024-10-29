@@ -127,51 +127,14 @@ You are an AI assistant specialized in handling general customer inquiries about
   * Unique implementation details
 
 # Response Format
-When responding, follow this structure:
+Return ONLY 'PHASE_1' for general queries that can be automated, or 'PHASE_2' for specific queries requiring analyst review.
+"""
 
-1. Query Type: [GENERAL or SPECIFIC]
-2. Confidence: [HIGH or MEDIUM or LOW]
-3. Response Category: [Best Practice/Mitigation/Recommendation/Prevention]
-4. Response: [Your detailed response]
-5. Next Steps: [Additional recommendations or escalation notes]
+        human_template = """Alert Context: {alert_summary}
+Query: {query}
 
-# Response Guidelines
-- For GENERAL queries:
-  * Provide industry-standard recommendations
-  * Include relevant security frameworks or standards
-  * Offer clear, actionable steps
-  * Link to official documentation when applicable
-  * Keep responses vendor-neutral unless specifically asked
+Classify as PHASE_1 or PHASE_2:"""
 
-- For SPECIFIC queries:
-  * Indicate need for Customer Analyst review
-  * Explain why the query requires specialized attention
-  * Note any specific information needed for analysis
-
-# Example Interaction
-User Query: "What are the best practices for NTP configuration?"
-
-Assistant Response:
-Query Type: GENERAL
-Confidence: HIGH
-Response Category: Best Practice
-Response: Here are the industry-standard NTP configuration best practices:
-1. Use multiple NTP servers (minimum 4) for redundancy
-2. Implement NTP authentication
-3. Use latest NTP version
-4. Configure proper access controls
-5. Monitor for time drift
-Next Steps: For implementation in your specific environment, consider reviewing official NTP documentation.
-
-# Important Notes:
-- Always prioritize security best practices
-- Maintain professional tone
-- Be clear when escalation is needed
-- Avoid making assumptions about customer environment
-- Stay within scope of general recommendations
-
-End your responses with a clear indication of whether follow-up with a Customer Analyst is recommended: """
-        
         self.chain = LLMChain(
             llm=self.llm,
             prompt=ChatPromptTemplate.from_messages([
@@ -231,9 +194,13 @@ class TemplateMatcher:
 
 class SitrepAnalyzer:
     def __init__(self):
-        self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
-        self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
-        self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
+        try:
+            self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
+            self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
+            self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
+        except Exception as e:
+            st.error(f"Failed to initialize analyzer: {str(e)}")
+            st.stop()
 
     def extract_status(self, text: str) -> Optional[str]:
         status_match = re.search(r"Status:([^\n]*)", text, re.IGNORECASE)
@@ -261,7 +228,7 @@ class SitrepAnalyzer:
                 "query_response": query_response
             }
         except Exception as e:
-            return {"error": f"Error: {str(e)}"}
+            return {"error": f"Analysis error: {str(e)}"}
 
 def main():
     st.set_page_config(page_title="Alert Analyzer", layout="wide")
@@ -285,50 +252,53 @@ def main():
         </style>
         """, unsafe_allow_html=True)
     
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        alert_summary = st.text_area("Summary Analysis", height=300)
-
-    with col2:
-        client_query = st.text_area("User Query", height=150)
-    
-    if st.button("Analyze", type="primary"):
-        if not alert_summary:
-            st.error("Please enter alert details.")
-            return
+    try:
+        col1, col2 = st.columns([2, 1])
         
-        analyzer = SitrepAnalyzer()
-        with st.spinner("Analyzing..."):
-            result = analyzer.analyze_sitrep(alert_summary, client_query)
+        with col1:
+            alert_summary = st.text_area("Summary Analysis", height=300)
+
+        with col2:
+            client_query = st.text_area("User Query", height=150)
+        
+        if st.button("Analyze", type="primary"):
+            if not alert_summary:
+                st.error("Please enter alert details.")
+                return
             
-            if "error" in result:
-                st.error(result["error"])
-            else:
-                # Show template and status in header box if they exist
-                header_content = []
-                if result["template"] != "Unknown Template":
-                    header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
-                if result.get("status"):
-                    header_content.append(f"<strong>Status:</strong> {result['status']}")
+            analyzer = SitrepAnalyzer()
+            with st.spinner("Analyzing..."):
+                result = analyzer.analyze_sitrep(alert_summary, client_query)
                 
-                if header_content:
-                    st.markdown(
-                        '<div class="header-box">' + 
-                        '<br>'.join(header_content) + 
-                        '</div>', 
-                        unsafe_allow_html=True
-                    )
-                
-                # Show response if exists
-                if result.get("query_response"):
-                    st.markdown(
-                        '<div class="response-box">' +
-                        '<strong>USER RESPONSE:</strong><br>' +
-                        f'{result["query_response"]}' +
-                        '</div>',
-                        unsafe_allow_html=True
-                    )
+                if "error" in result:
+                    st.error(result["error"])
+                else:
+                    # Show template and status in header box if they exist
+                    header_content = []
+                    if result["template"] != "Unknown Template":
+                        header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
+                    if result.get("status"):
+                        header_content.append(f"<strong>Status:</strong> {result['status']}")
+                    
+                    if header_content:
+                        st.markdown(
+                            '<div class="header-box">' + 
+                            '<br>'.join(header_content) + 
+                            '</div>', 
+                            unsafe_allow_html=True
+                        )
+                    
+                    # Show response if exists
+                    if result.get("query_response"):
+                        st.markdown(
+                            '<div class="response-box">' +
+                            '<strong>USER RESPONSE:</strong><br>' +
+                            f'{result["query_response"]}' +
+                            '</div>',
+                            unsafe_allow_html=True
+                        )
+    except Exception as e:
+        st.error(f"Application error: {str(e)}")
 
 if __name__ == "__main__":
     main()
