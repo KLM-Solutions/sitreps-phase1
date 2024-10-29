@@ -42,6 +42,65 @@ SITREP_TEMPLATES = [
     "Kerberos Authentication Abuse"
 ]
 
+class QueryClassifier:
+    """Dedicated classifier for analyzing user queries only"""
+    def __init__(self, openai_api_key: str):
+        self.llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=openai_api_key
+        )
+        self.setup_classifier()
+
+    def setup_classifier(self):
+        system_template = """You are a security query classifier focused solely on determining if user queries are general or specific in nature.
+
+CLASSIFY AS PHASE_1 IF THE QUERY:
+- Asks about general security best practices
+- Requests standard mitigation strategies
+- Seeks common security guidelines
+- Asks about industry-standard approaches
+- Requires general technical explanations
+- Asks about typical configurations
+- Seeks understanding of common alerts
+- Requests general prevention advice
+
+CLASSIFY AS PHASE_2 IF THE QUERY:
+- Mentions specific IP addresses
+- References particular log entries
+- Asks about custom configurations
+- Requires analysis of specific incidents
+- Mentions unique system setups
+- Requests investigation of particular events
+- Needs specific infrastructure details
+- Involves customer-specific data
+
+RESPONSE FORMAT:
+Return ONLY 'PHASE_1' or 'PHASE_2' based on the query type.
+
+EXAMPLES:
+Query: "What are best practices for handling TOR IP alerts?"
+Response: PHASE_1
+
+Query: "Why did we see this specific IP scanning our network at 2:30 PM?"
+Response: PHASE_2"""
+
+        human_template = """USER QUERY: {query}
+
+CLASSIFY AS PHASE_1 OR PHASE_2:"""
+
+        self.chain = LLMChain(
+            llm=self.llm,
+            prompt=ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(system_template),
+                HumanMessagePromptTemplate.from_template(human_template)
+            ])
+        )
+
+    def classify(self, query: str) -> bool:
+        result = self.chain.run(query=query).strip()
+        return result == "PHASE_1"
+
 class CrispResponseGenerator:
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
@@ -66,15 +125,9 @@ class CrispResponseGenerator:
         Format:
         - Start with direct answer about suggested approach
         - List better or complementary solutions if applicable
-        - Include brief technical justification if needed
-        
-        Example Good Response:
-        "IP blocking provides limited protection. Enable SSL/TLS inspection with certificate validation and set threshold alerts for suspicious traffic patterns at 100 requests/minute."
-        
-        Example Bad Response:
-        "You should consider multiple approaches including IP blocking which can help in some cases, and also think about SSL/TLS decryption as it might provide better visibility..."""
+        - Include brief technical justification if needed"""
 
-        human_template = """Alert Context: {alert_summary}
+        human_template = """Context: {alert_summary}
         Query: {query}
         
         Provide direct technical response:"""
@@ -89,63 +142,6 @@ class CrispResponseGenerator:
 
     def generate(self, alert_summary: str, query: str) -> str:
         return self.chain.run(alert_summary=alert_summary, query=query).strip()
-
-class PhaseClassifier:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_classifier()
-
-    def setup_classifier(self):
-        system_template = """You are a security query classifier. 
-
-       # System Context
-You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
-1. Determine if a query is general or specific
-2. Provide standardized responses for general queries
-3. Indicate when a query needs human analyst attention
-
-# Query Classification Rules
-- HANDLE queries that ask for:
-  * Industry best practices
-  * General recommendations
-  * Standard mitigation strategies
-  * Common security guidelines
-  * Prevention techniques
-  * Educational information
-  * High-level process explanations
-
-- ESCALATE queries that involve:
-  * Specific customer logs
-  * Custom configurations
-  * System-specific issues
-  * Detailed technical debugging
-  * Customer-specific setups
-  * Unique implementation details
-
-# Response Format
-Return ONLY 'PHASE_1' for general queries that can be automated, or 'PHASE_2' for specific queries requiring analyst review.
-"""
-
-        human_template = """Alert Context: {alert_summary}
-Query: {query}
-
-Classify as PHASE_1 or PHASE_2:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def classify(self, alert_summary: str, query: str) -> bool:
-        result = self.chain.run(alert_summary=alert_summary, query=query).strip()
-        return result == "PHASE_1"
 
 class TemplateMatcher:
     def __init__(self, openai_api_key: str):
@@ -197,7 +193,7 @@ class SitrepAnalyzer:
         try:
             self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
             self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
-            self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
+            self.query_classifier = QueryClassifier(OPENAI_API_KEY)
         except Exception as e:
             st.error(f"Failed to initialize analyzer: {str(e)}")
             st.stop()
@@ -215,11 +211,12 @@ class SitrepAnalyzer:
             is_phase_1 = False
             
             if client_query:
-                is_phase_1 = self.phase_classifier.classify(alert_summary, client_query)
+                # Only analyze the query itself, not the alert summary
+                is_phase_1 = self.query_classifier.classify(client_query)
                 if is_phase_1:
                     query_response = self.response_generator.generate(alert_summary, client_query)
                 else:
-                    query_response = "⚠️ Requires analyst review - beyond Phase 1 automation scope."
+                    query_response = "⚠️ This query requires analyst review - beyond Phase 1 automation scope."
             
             return {
                 "template": template,
@@ -249,6 +246,20 @@ def main():
             margin: 10px 0; 
             border-left: 4px solid #3498db; 
         }
+        .phase-indicator {
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .phase-1 {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .phase-2 {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
         </style>
         """, unsafe_allow_html=True)
     
@@ -273,7 +284,7 @@ def main():
                 if "error" in result:
                     st.error(result["error"])
                 else:
-                    # Show template and status in header box if they exist
+                    # Show template and status in header box
                     header_content = []
                     if result["template"] != "Unknown Template":
                         header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
@@ -288,15 +299,20 @@ def main():
                             unsafe_allow_html=True
                         )
                     
-                    # Show response if exists
+                    # Show phase classification and response if query exists
                     if result.get("query_response"):
+                        phase_class = "phase-1" if result["is_phase_1"] else "phase-2"
+                        phase_text = "Phase 1 - Automated Response" if result["is_phase_1"] else "Phase 2 - Requires Analyst"
+                        
                         st.markdown(
+                            f'<div class="phase-indicator {phase_class}">{phase_text}</div>' +
                             '<div class="response-box">' +
-                            '<strong>USER RESPONSE:</strong><br>' +
+                            '<strong>Response:</strong><br>' +
                             f'{result["query_response"]}' +
                             '</div>',
                             unsafe_allow_html=True
                         )
+    
     except Exception as e:
         st.error(f"Application error: {str(e)}")
 
