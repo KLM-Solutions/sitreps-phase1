@@ -127,14 +127,14 @@ class SitrepAnalyzer:
         
         return fields
 
-   def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-    """Complete sitrep analysis pipeline with Phase 1 classification"""
-    template = self.find_matching_template(alert_summary)
-    fields = self.extract_fields(alert_summary)
-    
-    # Phase 1 Classification System Message
-    phase1_system_message = SystemMessagePromptTemplate.from_template(
-        """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
+    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
+        """Complete sitrep analysis pipeline with Phase 1 classification"""
+        template = self.find_matching_template(alert_summary)
+        fields = self.extract_fields(alert_summary)
+        
+        # Phase 1 Classification System Message
+        phase1_system_message = SystemMessagePromptTemplate.from_template(
+            """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
 1. Determine if a query is general or specific
 2. Provide standardized responses for general queries
 3. Indicate when a query needs human analyst attention
@@ -183,55 +183,55 @@ When responding, follow this structure:
 - Be clear when escalation is needed
 - Avoid making assumptions about customer environment
 - Stay within scope of general recommendations"""
-    )
-    
-    if client_query:
-        # Modified human template to incorporate Phase 1 classification
-        human_template = """
-        Alert Details: {alert_summary}
-        Detected Fields: {fields}
-        User Query: {query}
-        
-        First, classify if this is a PHASE 1 (general) or PHASE 2 (specific) query.
-        Then provide a response following the specified format.
-        For PHASE 2 queries, indicate that analyst review is needed."""
-    else:
-        human_template = """
-        Alert Details: {alert_summary}
-        Detected Fields: {fields}
-        
-        Analyze this security alert and provide key insights, focusing on general security implications and best practices."""
-    
-    # Initialize specialized response LLM
-    response_llm = ChatOpenAI(
-        model_name="gpt-4o-mini",
-        temperature=0.1,
-        openai_api_key=OPENAI_API_KEY
-    )
-    
-    human_message = HumanMessagePromptTemplate.from_template(human_template)
-    chat_prompt = ChatPromptTemplate.from_messages([phase1_system_message, human_message])
-    
-    try:
-        chain = LLMChain(llm=response_llm, prompt=chat_prompt)
-        analysis = chain.run(
-            alert_summary=alert_summary,
-            fields=fields,
-            query=client_query if client_query else ""
         )
         
-        # Extract phase classification from response if it contains one
-        is_phase_1 = "SPECIFIC" not in analysis.split('\n')[0].upper()
+        if client_query:
+            # Modified human template to incorporate Phase 1 classification
+            human_template = """
+            Alert Details: {alert_summary}
+            Detected Fields: {fields}
+            User Query: {query}
+            
+            First, classify if this is a PHASE 1 (general) or PHASE 2 (specific) query.
+            Then provide a response following the specified format.
+            For PHASE 2 queries, indicate that analyst review is needed."""
+        else:
+            human_template = """
+            Alert Details: {alert_summary}
+            Detected Fields: {fields}
+            
+            Analyze this security alert and provide key insights, focusing on general security implications and best practices."""
         
-        return {
-            "template": template,
-            "fields": fields,
-            "analysis": analysis,
-            "has_query": bool(client_query),
-            "is_phase_1": is_phase_1
-        }
-    except Exception as e:
-        return {"error": f"Error generating analysis: {str(e)}"}
+        # Initialize specialized response LLM
+        response_llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=OPENAI_API_KEY
+        )
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([phase1_system_message, human_message])
+        
+        try:
+            chain = LLMChain(llm=response_llm, prompt=chat_prompt)
+            analysis = chain.run(
+                alert_summary=alert_summary,
+                fields=fields,
+                query=client_query if client_query else ""
+            )
+            
+            # Extract phase classification from response if it contains one
+            is_phase_1 = "SPECIFIC" not in analysis.split('\n')[0].upper()
+            
+            return {
+                "template": template,
+                "fields": fields,
+                "analysis": analysis,
+                "has_query": bool(client_query),
+                "is_phase_1": is_phase_1
+            }
+        except Exception as e:
+            return {"error": f"Error generating analysis: {str(e)}"}
 
 def main():
     st.set_page_config(page_title="Sitreps Analyzer", layout="wide")
