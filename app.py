@@ -129,35 +129,68 @@ class SitrepAnalyzer:
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         """Complete sitrep analysis pipeline with prioritized client query response"""
-        # Use GPT-4o-mini for template matching
         template = self.find_matching_template(alert_summary)
-        
-        # Extract all available fields
         fields = self.extract_fields(alert_summary)
         
+        # Modified system message for more concise analysis
         system_message = SystemMessagePromptTemplate.from_template(
             """You are a precise security analyst focused on delivering ultra-concise insights. Your analysis must be:
 
-            1. no Bullet-pointed
-            2. more crisp but should not limit 
+            1. Bullet-pointed only
+            2. Maximum 3-4 words per point
             3. Only critical findings
-            4. No explanations
-            5. Action-oriented
+            4. No explanations or context
+            5. Action-oriented commands
             6. No repetition of alert data
 
             Use this structure:
             • [Threat Level]: High/Medium/Low
-            • [Key Finding]: Verb + Object
-            • [Action]: Verb + Object"""
+            • [Finding]: Key security issue
+            • [Impact]: Business risk
+            • [Action]: Required response"""
         )
         
         if client_query:
+            # Modified human template for queries to be more concise
             human_template = """
             Alert: {alert_summary}
             Fields: {fields}
             Query: {query}
 
-       
+            FORMAT:
+            ## Threat Summary
+            • [Single line threat level]
+            • [Key finding in 3-4 words]
+
+            ## Impact Assessment
+            • [Business impact in 3-4 words]
+            • [Risk level in 2-3 words]
+
+            ## Required Actions
+            • [Action commands in 3-4 words]
+
+            ## Query Response
+            • [Direct answer in 3-4 words]"""
+        else:
+            # Modified human template for standard analysis to be more concise
+            human_template = """
+            Alert: {alert_summary}
+            Fields: {fields}
+
+            FORMAT:
+            ## Threat Summary
+            • [Single line threat level]
+            • [Key finding in 3-4 words]
+
+            ## Impact Assessment
+            • [Business impact in 3-4 words]
+            • [Risk level in 2-3 words]
+
+            ## Required Actions
+            • [Action commands in 3-4 words]"""
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
         
         try:
             chain = LLMChain(llm=self.analysis_llm, prompt=chat_prompt)
