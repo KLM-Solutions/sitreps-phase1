@@ -51,65 +51,28 @@ class SecurityResponseGenerator:
         self.setup_chain()
 
     def setup_chain(self):
-        system_template = """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Your role is to:
-1. Determine if a query is general or specific
-2. Provide standardized responses for general queries
-3. Indicate when a query needs human analyst attention
+        system_template = """You are a cybersecurity expert providing concise responses. Focus on:
+1. Direct actionable guidance
+2. Critical information only
+3. Maximum 2-3 sentences
+4. No technical jargon unless necessary
 
-# Query Classification Rules
-- HANDLE queries that ask for:
-  * Industry best practices
-  * General recommendations
-  * Standard mitigation strategies
-  * Common security guidelines
-  * Prevention techniques
-  * Educational information
-  * High-level process explanations
+Key Rules:
+- Be extremely concise
+- Prioritize immediate actions
+- Only include essential details
+- Use simple language
 
-- ESCALATE queries that involve:
-  * Specific customer logs
-  * Custom configurations
-  * System-specific issues
-  * Detailed technical debugging
-  * Customer-specific setups
-  * Unique implementation details
-
-# Response Format
-When responding, follow this structure:
-1. Query Type: [GENERAL or SPECIFIC]
-2. Confidence: [HIGH or MEDIUM or LOW]
-3. Response Category: [Best Practice/Mitigation/Recommendation/Prevention]
-4. Response: [Your detailed response]
-5. Next Steps: [Additional recommendations or escalation notes]
-
-# Response Guidelines
-- For GENERAL queries:
-  * Provide industry-standard recommendations
-  * Include relevant security frameworks or standards
-  * Offer clear, actionable steps
-  * Link to official documentation when applicable
-  * Keep responses vendor-neutral unless specifically asked
-
-- For SPECIFIC queries:
-  * Indicate need for Customer Analyst review
-  * Explain why the query requires specialized attention
-  * Note any specific information needed for analysis
-
-# Important Notes:
-- Always prioritize security best practices
-- Maintain professional tone
-- Be clear when escalation is needed
-- Avoid making assumptions about customer environment
-- Stay within scope of general recommendations
-
-End your responses with a clear indication of whether follow-up with a Customer Analyst is recommended."""
+Format your response with ONLY:
+Risk: [One sentence risk description]
+Action: [One sentence immediate action]"""
 
         human_template = """Context Information:
 Alert Type: {alert_type}
 Alert Summary: {alert_summary}
 Client Query: {query}
 
-Generate a comprehensive response following the specified format and guidelines."""
+Provide a concise response:"""
 
         self.chain = LLMChain(
             llm=self.llm,
@@ -121,29 +84,17 @@ Generate a comprehensive response following the specified format and guidelines.
 
     def parse_response(self, response: str) -> Dict[str, str]:
         components = {
-            'query_type': None,
-            'confidence': None,
-            'response_category': None,
-            'response': None,
-            'next_steps': None
+            'risk': None,
+            'action': None
         }
         
-        query_type_match = re.search(r"Query Type:\s*(.*?)(?:\n|$)", response)
-        confidence_match = re.search(r"Confidence:\s*(.*?)(?:\n|$)", response)
-        category_match = re.search(r"Response Category:\s*(.*?)(?:\n|$)", response)
-        response_match = re.search(r"Response:(.*?)(?=Next Steps:|$)", response, re.DOTALL)
-        next_steps_match = re.search(r"Next Steps:(.*?)$", response, re.DOTALL)
+        risk_match = re.search(r"Risk:(.*?)(?=Action:|$)", response, re.DOTALL)
+        action_match = re.search(r"Action:(.*?)$", response, re.DOTALL)
         
-        if query_type_match:
-            components['query_type'] = query_type_match.group(1).strip()
-        if confidence_match:
-            components['confidence'] = confidence_match.group(1).strip()
-        if category_match:
-            components['response_category'] = category_match.group(1).strip()
-        if response_match:
-            components['response'] = response_match.group(1).strip()
-        if next_steps_match:
-            components['next_steps'] = next_steps_match.group(1).strip()
+        if risk_match:
+            components['risk'] = risk_match.group(1).strip()
+        if action_match:
+            components['action'] = action_match.group(1).strip()
             
         return components
 
@@ -157,44 +108,26 @@ Generate a comprehensive response following the specified format and guidelines.
             
             structured_response = self.parse_response(raw_response)
             structured_response['success'] = True
-            structured_response['raw_response'] = raw_response
-            
             return structured_response
             
         except Exception as e:
             return {
                 'success': False,
-                'error': str(e),
-                'query_type': None,
-                'confidence': None,
-                'response_category': None,
-                'response': None,
-                'next_steps': None,
-                'raw_response': None
+                'error': str(e)
             }
 
     def format_response(self, response_dict: Dict[str, str]) -> str:
         if not response_dict.get('success', True):
-            return f"Error generating response: {response_dict.get('error', 'Unknown error')}"
+            return f"Error: {response_dict.get('error', 'Unknown error')}"
             
         formatted_parts = []
         
-        if response_dict.get('query_type'):
-            formatted_parts.append(f"Query Type: {response_dict['query_type']}")
-        
-        if response_dict.get('confidence'):
-            formatted_parts.append(f"Confidence: {response_dict['confidence']}")
+        if response_dict.get('risk'):
+            formatted_parts.append(f"Risk: {response_dict['risk']}")
+        if response_dict.get('action'):
+            formatted_parts.append(f"Action: {response_dict['action']}")
             
-        if response_dict.get('response_category'):
-            formatted_parts.append(f"Response Category: {response_dict['response_category']}")
-            
-        if response_dict.get('response'):
-            formatted_parts.append(f"Response:\n{response_dict['response']}")
-            
-        if response_dict.get('next_steps'):
-            formatted_parts.append(f"Next Steps:\n{response_dict['next_steps']}")
-            
-        return "\n\n".join(formatted_parts)
+        return "\n".join(formatted_parts)
 
 class PhaseClassifier:
     """Classifier for determining if queries can be handled in Phase 1"""
@@ -326,7 +259,7 @@ class SitrepAnalyzer:
                     )
                     query_response = self.response_generator.format_response(response_dict)
                 else:
-                    query_response = "⚠️ Requires analyst review - beyond Phase 1 automation scope."
+                    query_response = "⚠️ This query requires analyst review - beyond Phase 1 automation scope."
             
             return {
                 "template": template,
@@ -383,7 +316,7 @@ def main():
             if "error" in result:
                 st.error(result["error"])
             else:
-                # Show template and status in header box if they exist
+                # Show template and status in header box
                 header_content = []
                 if result["template"] != "Unknown Template":
                     header_content.append(f"<strong>Matched Template:</strong> {result['template']}")
@@ -402,7 +335,6 @@ def main():
                 if result.get("query_response"):
                     st.markdown(
                         '<div class="response-box">' +
-                        '<strong>RESPONSE:</strong><br>' +
                         f'{result["query_response"]}' +
                         '</div>',
                         unsafe_allow_html=True
