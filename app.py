@@ -136,67 +136,28 @@ class SitrepAnalyzer:
         fields = self.extract_fields(alert_summary)
         
         system_message = SystemMessagePromptTemplate.from_template(
-            """You are a highly efficient security analyst using GPT-4o-mini. Consider ALL information in the sitrep.
+            """You are a precise security analyst focused on delivering ultra-concise insights. Your analysis must be:
 
-            Critical Requirements:
-            1. Analyze ALL fields present - not just status
-            2. Process alert whether fields are present or not
-            3. NEVER repeat information from the alert/template
-            4. Keep responses under 50 words per section
-            5. If fields exist, analyze their security implications
-            6. Focus on unique insights and critical findings
-            7. Be extremely concise and precise
+            1. no Bullet-pointed
+            2. more crisp but should not limit 
+            3. Only critical findings
+            4. No explanations
+            5. Action-oriented
+            6. No repetition of alert data
 
-            Remember: Process all sitrep elements equally."""
+            Use this structure:
+            • [Threat Level]: High/Medium/Low
+            • [Key Finding]: Verb + Object
+            • [Action]: Verb + Object"""
         )
         
         if client_query:
             human_template = """
-            INPUT DATA:
-            Template: {template}
             Alert: {alert_summary}
-            Fields Detected: {fields}
+            Fields: {fields}
             Query: {query}
 
-            RESPONSE REQUIREMENTS:
-            1. Never repeat information from input
-            2. Direct answer to query only
-            3. Include critical context from fields
-            4. Max 50 words per section
-
-            Format:
-
-            ## Query Response
-            [Direct answer using available context]
-
-            ## Technical Context
-            [Only if critical new insights exist]
-
-            ## Required Actions
-            [Only if immediate actions needed]"""
-        else:
-            human_template = """
-            INPUT DATA:
-            Template: {template}
-            Alert: {alert_summary}
-            Fields Detected: {fields}
-
-            RESPONSE REQUIREMENTS:
-            1. Never repeat information from input
-            2. Only new insights and implications
-            3. Consider all fields equally
-            4. Max 50 words per section
-
-            Format:
-
-            ## Key Insights
-            [New technical findings only]
-
-            ## Required Actions
-            [Only if immediate actions needed]"""
-        
-        human_message = HumanMessagePromptTemplate.from_template(human_template)
-        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+       
         
         try:
             chain = LLMChain(llm=self.analysis_llm, prompt=chat_prompt)
@@ -383,27 +344,6 @@ def main():
                 st.markdown('<p class="section-header">Analysis</p>', unsafe_allow_html=True)
                 st.markdown(f'<div class="analysis-box">{result["analysis"]}</div>', 
                           unsafe_allow_html=True)
-                
-                # Download button
-                combined_analysis = f"""
-                # SITREP ANALYSIS REPORT
-                
-                ## Matched Template
-                {result['template']}
-                
-                ## Extracted Fields
-                {result['fields']}
-                
-                ## Analysis
-                {result['analysis']}
-                """
-                
-                st.download_button(
-                    label="Download Analysis",
-                    data=combined_analysis,
-                    file_name="sitrep_analysis_report.md",
-                    mime="text/markdown"
-                )
 
 if __name__ == "__main__":
     main()
