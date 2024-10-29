@@ -36,176 +36,76 @@ SITREP_TEMPLATES = [
     "Tor IP",
     "Spam IP",
     "NTP TOR IP",
-    "Malware IP",
-    "Anomalous Kerberos Authentication",
-    "Kerberos-related alert",
-    "Kerberos Authentication Abuse"
+    "Malware IP"
 ]
-
-class CrispResponseGenerator:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_chain()
-
-    def setup_chain(self):
-        system_template = """You are an AI assistant specialized in handling general customer inquiries about cybersecurity and IT best practices. Provide direct, single-sentence responses focused on actionable insights or recommendations.
-
-For queries about:
-* Industry best practices
-* General recommendations
-* Standard mitigation strategies
-* Common security guidelines
-* Prevention techniques
-* Educational information
-* High-level process explanations
-
-Provide a clear, technical response that directly addresses the query in one sentence.
-
-Format your response as:
-User Response: [Single concise technical response]"""
-
-        human_template = """Alert Context: {alert_summary}
-Query: {query}
-
-Provide a single concise response that directly addresses the security concern or recommendation:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def generate(self, alert_summary: str, query: str) -> str:
-        response = self.chain.run(alert_summary=alert_summary, query=query).strip()
-        if not response.startswith("User Response:"):
-            response = f"User Response: {response}"
-        return response
-
-class PhaseClassifier:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_classifier()
-
-    def setup_classifier(self):
-        system_template = """You are a security query classifier specialized in analyzing customer queries.
-
-# Classification Rules
-- CLASSIFY AS PHASE_1 when query asks for:
-  * Industry best practices
-  * General recommendations
-  * Standard mitigation strategies
-  * Common security guidelines
-  * Prevention techniques
-  * General configuration advice
-  * Effectiveness of security measures
-  * Comparison of security approaches
-
-- CLASSIFY AS NOT_PHASE_1 when query involves:
-  * Specific customer logs analysis
-  * Custom configurations review
-  * System-specific troubleshooting
-  * Detailed technical debugging
-  * Customer-specific setups
-  * Unique implementation details
-
-Example PHASE_1 queries:
-- "What are best practices for handling this type of alert?"
-- "Is IP blocking effective for this threat?"
-- "What's the recommended way to respond?"
-- "Should we enable additional monitoring?"
-- "What threshold should we set?"
-
-Example NOT_PHASE_1 queries:
-- "Can you check our specific logs?"
-- "Why is this IP appearing repeatedly?"
-- "What's causing these errors in our system?"
-- "Can you investigate this specific incident?"
-- "What's wrong with our current setup?"
-
-Remember: If the query asks for general guidance or best practices, it's PHASE_1 even if it references specific tools or technologies."""
-
-        human_template = """Alert Context: {alert_summary}
-Query: {query}
-
-Based on the classification rules, is this a PHASE_1 or NOT_PHASE_1 query?
-Respond ONLY with PHASE_1 or NOT_PHASE_1:"""
-
-        self.chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def classify(self, alert_summary: str, query: str) -> bool:
-        result = self.chain.run(alert_summary=alert_summary, query=query).strip()
-        return result == "PHASE_1"
-
-# Rest of the classes/functions remain the same as your previous code
-class TemplateMatcher:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=openai_api_key
-        )
-        self.setup_matcher()
-        self.templates = SITREP_TEMPLATES
-
-    def setup_matcher(self):
-        system_template = """You are a specialized security alert template matcher focused on exact pattern matching.
-        
-        Key matching criteria:
-        1. Authentication patterns (Kerberos, sign-ins, access)
-        2. Traffic patterns (anomalous, internal, internet)
-        3. IP-based threats (blacklisted, tor, spam, malware)
-        4. Protocol indicators (DNS, TLS, NTP)
-        5. Specific services (bots, scanners, anonymization)
-        
-        Return ONLY the exact matching template name. If no clear match exists, return "Unknown Template"."""
-
-        human_template = """Available Templates:
-        {templates}
-
-        Alert Text:
-        {alert_text}
-
-        Return exact matching template name:"""
-        
-        self.matcher_chain = LLMChain(
-            llm=self.llm,
-            prompt=ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_template),
-                HumanMessagePromptTemplate.from_template(human_template)
-            ])
-        )
-
-    def match_template(self, alert_text: str) -> str:
-        result = self.matcher_chain.run(
-            templates="\n".join(self.templates),
-            alert_text=alert_text
-        ).strip()
-        return result if result in self.templates else "Unknown Template"
 
 class SitrepAnalyzer:
     def __init__(self):
-        self.template_matcher = TemplateMatcher(OPENAI_API_KEY)
-        self.response_generator = CrispResponseGenerator(OPENAI_API_KEY)
-        self.phase_classifier = PhaseClassifier(OPENAI_API_KEY)
+        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+        # Separate GPT-4o-mini model for template matching
+        self.template_matcher_llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0,
+            openai_api_key=OPENAI_API_KEY
+        )
+        # Original model for analysis
+        self.analysis_llm = ChatOpenAI(
+            model_name="gpt-4o-mini",
+            temperature=0.1,
+            openai_api_key=OPENAI_API_KEY
+        )
+        self.setup_vector_store()
+        self.setup_template_matcher()
+    
+    def setup_vector_store(self):
+        """Initialize FAISS vector store with templates"""
+        self.vector_store = FAISS.from_texts(SITREP_TEMPLATES, self.embeddings)
+    
+    def setup_template_matcher(self):
+        """Setup the template matching prompt"""
+        system_template = """You are a precise security alert template matcher. Your task is to:
+        1. Analyze the given security alert
+        2. Match it to the most relevant template from the provided list
+        3. Return ONLY the exact template name that matches best
+        4. If no exact match exists, return the closest matching template
 
+        Focus on key alert characteristics and pattern matching."""
+
+        human_template = """
+        AVAILABLE TEMPLATES:
+        {templates}
+
+        ALERT TO ANALYZE:
+        {alert}
+
+        Return only the best matching template name from the list. No explanation needed."""
+
+        self.template_matcher_prompt = ChatPromptTemplate.from_messages([
+            SystemMessagePromptTemplate.from_template(system_template),
+            HumanMessagePromptTemplate.from_template(human_template)
+        ])
+    
+    def find_matching_template(self, sitrep_text: str) -> str:
+        """Find most similar template using GPT-4o-mini"""
+        try:
+            chain = LLMChain(llm=self.template_matcher_llm, prompt=self.template_matcher_prompt)
+            matched_template = chain.run(
+                templates="\n".join(SITREP_TEMPLATES),
+                alert=sitrep_text
+            ).strip()
+            
+            # Verify the template exists in our list
+            if matched_template in SITREP_TEMPLATES:
+                return matched_template
+            return "Unknown Template"
+        except Exception as e:
+            print(f"Template matching error: {str(e)}")
+            return "Unknown Template"
+    
     def extract_fields(self, text: str) -> Dict[str, str]:
+        """Extract various fields from the alert summary"""
         fields = {}
+        
         field_patterns = {
             'status': r"Status:([^\n]*)",
             'command': r"Command:([^\n]*)",
@@ -224,37 +124,102 @@ class SitrepAnalyzer:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 fields[field] = match.group(1).strip()
+        
         return fields
 
     def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
+        """Complete sitrep analysis pipeline with prioritized client query response"""
+        # Use GPT-4o-mini for template matching
+        template = self.find_matching_template(alert_summary)
+        
+        # Extract all available fields
+        fields = self.extract_fields(alert_summary)
+        
+        system_message = SystemMessagePromptTemplate.from_template(
+            """You are a highly efficient security analyst using GPT-4o-mini. Consider ALL information in the sitrep.
+
+            Critical Requirements:
+            1. Analyze ALL fields present - not just status
+            2. Process alert whether fields are present or not
+            3. NEVER repeat information from the alert/template
+            4. Keep responses under 50 words per section
+            5. If fields exist, analyze their security implications
+            6. Focus on unique insights and critical findings
+            7. Be extremely concise and precise
+
+            Remember: Process all sitrep elements equally."""
+        )
+        
+        if client_query:
+            human_template = """
+            INPUT DATA:
+            Template: {template}
+            Alert: {alert_summary}
+            Fields Detected: {fields}
+            Query: {query}
+
+            RESPONSE REQUIREMENTS:
+            1. Never repeat information from input
+            2. Direct answer to query only
+            3. Include critical context from fields
+            4. Max 50 words per section
+
+            Format:
+
+            ## Query Response
+            [Direct answer using available context]
+
+            ## Technical Context
+            [Only if critical new insights exist]
+
+            ## Required Actions
+            [Only if immediate actions needed]"""
+        else:
+            human_template = """
+            INPUT DATA:
+            Template: {template}
+            Alert: {alert_summary}
+            Fields Detected: {fields}
+
+            RESPONSE REQUIREMENTS:
+            1. Never repeat information from input
+            2. Only new insights and implications
+            3. Consider all fields equally
+            4. Max 50 words per section
+
+            Format:
+
+            ## Key Insights
+            [New technical findings only]
+
+            ## Required Actions
+            [Only if immediate actions needed]"""
+        
+        human_message = HumanMessagePromptTemplate.from_template(human_template)
+        chat_prompt = ChatPromptTemplate.from_messages([system_message, human_message])
+        
         try:
-            template = self.template_matcher.match_template(alert_summary)
-            fields = self.extract_fields(alert_summary)
-            
-            query_response = None
-            is_phase_1 = False
-            
-            if client_query:
-                is_phase_1 = self.phase_classifier.classify(alert_summary, client_query)
-                if is_phase_1:
-                    query_response = self.response_generator.generate(alert_summary, client_query)
-                else:
-                    query_response = "User Response: Requires analyst review - escalating for detailed investigation."
+            chain = LLMChain(llm=self.analysis_llm, prompt=chat_prompt)
+            analysis = chain.run(
+                template=template,
+                alert_summary=alert_summary,
+                fields=fields,
+                query=client_query if client_query else ""
+            )
             
             return {
                 "template": template,
                 "fields": fields,
-                "is_phase_1": is_phase_1,
-                "query_response": query_response
+                "analysis": analysis,
+                "has_query": bool(client_query)
             }
         except Exception as e:
             return {"error": f"Error generating analysis: {str(e)}"}
 
-# The main() function remains exactly the same as your previous code
 def main():
     st.set_page_config(page_title="Sitreps Analyzer", layout="wide")
     
-    # Styling remains the same
+    # Styling
     st.markdown("""
         <style>
         .main-title {
@@ -276,6 +241,13 @@ def main():
             padding: 10px 0;
             border-bottom: 2px solid #eee;
         }
+        .subsection-header {
+            font-size: 20px !important;
+            font-weight: bold;
+            color: #34495e;
+            margin-top: 15px;
+            padding: 8px 0;
+        }
         .analysis-box {
             background-color: #ffffff;
             padding: 20px;
@@ -284,12 +256,17 @@ def main():
             margin: 10px 0;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .fields-box {
-            background-color: #f7f9fc;
+        .analysis-section {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .client-query-response {
+            background-color: #f8f9fa;
             padding: 15px;
             border-radius: 8px;
-            border-left: 5px solid #e67e22;
-            margin: 10px 0;
+            border-left: 5px solid #3498db;
+            margin-bottom: 20px;
         }
         .template-match {
             background-color: #e8f4f8;
@@ -297,16 +274,67 @@ def main():
             border-radius: 8px;
             margin: 10px 0;
         }
-        .response-box { 
-            background: white; 
-            padding: 15px; 
-            border-radius: 5px; 
-            margin: 10px 0; 
-            border-left: 4px solid #3498db; 
+        .status-box {
+            background-color: #fff3e6;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .fields-box {
+            background-color: #f7f9fc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #e67e22;
+            margin: 10px 0;
+        }
+        .bullet-point {
+            margin-left: 20px;
+            position: relative;
+        }
+        .bullet-point:before {
+            content: "•";
+            position: absolute;
+            left: -15px;
+            color: #3498db;
+        }
+        h2 {
+            font-size: 24px !important;
+            font-weight: bold !important;
+            color: #2c3e50 !important;
+            margin-top: 25px !important;
+            margin-bottom: 15px !important;
+        }
+        h3 {
+            font-size: 20px !important;
+            font-weight: bold !important;
+            color: #34495e !important;
+            margin-top: 20px !important;
+            margin-bottom: 10px !important;
+        }
+        ul {
+            margin-left: 20px !important;
+            margin-bottom: 15px !important;
+        }
+        li {
+            margin-bottom: 8px !important;
+        }
+        .stButton>button {
+            background-color: #2a5298;
+            color: white;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-weight: bold;
+        }
+        .stTextArea>div>div>textarea {
+            border-radius: 5px;
+            border-color: #e0e0e0;
         }
         </style>
         """, unsafe_allow_html=True)
     
+    analyzer = SitrepAnalyzer()
+    
+    # Main interface
     st.markdown('<p class="main-title">Sitreps Analysis System</p>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([2, 1])
@@ -333,7 +361,6 @@ def main():
             return
         
         with st.spinner("Analyzing security alert..."):
-            analyzer = SitrepAnalyzer()
             result = analyzer.analyze_sitrep(alert_summary, client_query)
             
             if "error" in result:
@@ -352,15 +379,10 @@ def main():
                         st.markdown(f"**{field.title()}:** {value}")
                     st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Display analysis/response if present
-                if result.get("query_response"):
-                    st.markdown('<p class="section-header">Analysis</p>', unsafe_allow_html=True)
-                    st.markdown(
-                        '<div class="response-box">' +
-                        f'{result["query_response"]}' +
-                        '</div>',
-                        unsafe_allow_html=True
-                    )
+                # Display analysis
+                st.markdown('<p class="section-header">Analysis</p>', unsafe_allow_html=True)
+                st.markdown(f'<div class="analysis-box">{result["analysis"]}</div>', 
+                          unsafe_allow_html=True)
                 
                 # Download button
                 combined_analysis = f"""
@@ -373,7 +395,7 @@ def main():
                 {result['fields']}
                 
                 ## Analysis
-                {result.get('query_response', 'No analysis generated.')}
+                {result['analysis']}
                 """
                 
                 st.download_button(
