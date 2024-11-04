@@ -1612,13 +1612,7 @@ def main():
                     st.subheader("Generated JSON Filter")
                     st.json(result["json_filter"])
                 
-                # Download button for complete analysis
-                st.download_button(
-                    "Download Complete Analysis",
-                    data=json.dumps(result, indent=2),
-                    file_name="sitrep_analysis.json",
-                    mime="application/json"
-                )
+            
 
 if __name__ == "__main__":
     main()
