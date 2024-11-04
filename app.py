@@ -1404,7 +1404,7 @@ class SitrepAnalyzer:
                     "template": template_name,
                     "alert_summary": alert_summary,
                     "feedback": client_query,
-                    "alert_type": template_details.get("category", "unknown")
+                
                 })
                 if json_filter:
                     result["json_filter"] = json_filter
@@ -1448,7 +1448,6 @@ class SitrepAnalyzer:
             Focus on clarity and brevity above all else.
             
             Template type: {template}
-            Category: {category}
             Query Type: {query_type}"""
         )
         
@@ -1475,7 +1474,6 @@ class SitrepAnalyzer:
         
         analysis = chain.run(
             template=template_name,
-            category=template_details.get("category", "Unknown"),
             query_type="General" if is_general else "Specific",
             is_general=is_general,
             alert_summary=alert_summary,
@@ -1572,8 +1570,6 @@ def main():
                 st.subheader("Template Match")
                 st.json({
                     "Template": result["template"],
-                    "Category": result["template_details"].get("category", "Unknown"),
-                    "Severity": result["template_details"].get("severity", "Unknown")
                 })
                 
                 # Always show template JSON if requested
