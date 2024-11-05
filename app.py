@@ -1282,7 +1282,7 @@ Perimeter (CM)
 }
 class SitrepAnalyzer:
     def __init__(self):
-        self.openai_api_key = st.secrets["OPENAI_API_KEY"]
+        self.openai_api_key = "your-api-key-here"
         openai.api_key = self.openai_api_key
         self.embeddings = OpenAIEmbeddings(openai_api_key=self.openai_api_key)
         self.llm = ChatOpenAI(
