@@ -1,12 +1,10 @@
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain.embeddings import OpenAIEmbeddings 
 from langchain.chains import LLMChain
 from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 import openai
 from typing import Dict, Optional, List
-import re
 import json
 import logging
 import os
@@ -14,6 +12,8 @@ import os
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Your existing SITREP_TEMPLATES_DETAILED dictionary
 SITREP_TEMPLATES_DETAILED = {
     "Anomalous Internal Traffic": {
         "name": """<div id="name">Test Anomalous Internal Traffic - IDS Alert</div>""",
@@ -1280,339 +1280,342 @@ Perimeter (CM)
 </div>"""
     }
 }
+
 class SitrepAnalyzer:
-    def __init__(self):
-        self.openai_api_key = "your-api-key-here"
-        openai.api_key = self.openai_api_key
-        self.embeddings = OpenAIEmbeddings(openai_api_key=self.openai_api_key)
-        self.llm = ChatOpenAI(
-            model_name="gpt-4o-mini",
-            temperature=0.1,
-            openai_api_key=self.openai_api_key
-        )
-        self.setup_vector_store()
+   def __init__(self):
+       # Only use environment variable for API key
+       self.openai_api_key = os.getenv("OPENAI_API_KEY")
+           
+       if not self.openai_api_key:
+           raise ValueError("OpenAI API key not found in environment variables. Please set OPENAI_API_KEY.")
+           
+       openai.api_key = self.openai_api_key
+       self.llm = ChatOpenAI(
+           model_name="gpt-4o-mini",
+           temperature=0.1,
+           openai_api_key=self.openai_api_key
+       )
 
-    def setup_vector_store(self):
-        """Initialize FAISS vector store with templates"""
-        self.vector_store = FAISS.from_texts(
-            list(SITREP_TEMPLATES_DETAILED.keys()),
-            self.embeddings
-        )
+   def find_matching_template(self, alert_summary: str) -> str:
+       """Find matching template using LLM understanding"""
+       template_matching_prompt = f"""
+       Given a security alert summary, please analyze it against these 19 security templates and identify the single most appropriate matching template. Consider:
 
-    def is_general_query(self, query: str) -> bool:
-        """Determine if a query is general or specific to customer logs"""
-        general_keywords = [
-            "best practice", "recommendation", "guideline", "how to", "what is",
-            "explain", "describe", "general", "typical", "usually", "commonly",
-            "standard", "basic", "fundamental", "principle", "strategy"
-        ]
-        
-        specific_keywords = [
-            "our", "my", "log", "specific", "custom", "environment", "system",
-            "network", "instance", "configuration", "setup", "deployment"
-        ]
-        
-        query = query.lower()
-        general_count = sum(1 for keyword in general_keywords if keyword in query)
-        specific_count = sum(1 for keyword in specific_keywords if keyword in query)
-        
-        if abs(general_count - specific_count) <= 1:
-            prompt = f"""
-            Analyze if this query is general or specific to customer logs/systems:
-            Query: {query}
-            
-            Respond with only 'general' or 'specific'.
-            A query is general if it asks about best practices, recommendations, or standard procedures.
-            A query is specific if it requires customer log analysis or specific system knowledge.
-            """
-            response = self.llm.predict(prompt)
-            return response.strip().lower() == "general"
-        
-        return general_count > specific_count
+1. Core security threat/issue being described
+2. Technical indicators and patterns
+3. Type of traffic or activity involved
+4. Associated risks and implications
+5. Recommended mitigations
 
-    def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
-        """Generate JSON path filters based on sitrep data"""
-        try:
-            template_name = sitrep_data.get("template", "")
-            template_data = SITREP_TEMPLATES_DETAILED.get(template_name, {})
-            
-            # Extract relevant fields for filter generation
-            filter_prompt = f"""
-            Create a JSON path filter based on this security alert:
-            Template Name: {template_name}
-            Template Type: {template_data.get('name', '')}
-            Alert Summary: {sitrep_data.get('alert_summary', '')}
-            Customer Query: {sitrep_data.get('feedback', '')}
+Based on this analysis, determine which ONE template best matches the scenario and explain why this template is the most relevant match compared to others.
+For example, if you share this alert:
+[Insert your security alert summary here]
+I will analyze it and:
 
-            Generate a JSON filter that would help process similar alerts.
-            The filter should include:
-            1. Key paths to monitor
-            2. Conditions to match
-            3. Thresholds or patterns to detect
+1. Identify the key elements of the alert
+2. Compare it against all 19 templates
+3. Select the single best matching template
+4. Explain why this template is the most appropriate match
+5. Note any important variations from the template
 
-            Return only valid JSON without explanation.
-            """
-            
-            filter_response = self.llm.predict(filter_prompt)
-            
-            try:
-                # Parse and validate the JSON response
-                filter_data = json.loads(filter_response)
-                
-                # Add metadata to the filter
-                filter_data["metadata"] = {
-                    "template": template_name,
-                    "generated_for": sitrep_data.get("alert_type", "unknown"),
-                    "query_type": "general" if self.is_general_query(sitrep_data.get("feedback", "")) else "specific"
-                }
-                
-                return filter_data
-                
-            except json.JSONDecodeError:
-                logger.error("Failed to parse JSON filter response")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error generating JSON path filter: {str(e)}")
-            return None
+       Alert Summary: {alert_summary}
 
-    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-        """Enhanced sitrep analysis with filter generation"""
-        try:
-            # Find matching template
-            matching_templates = self.find_matching_template(alert_summary)
-            template_name = matching_templates[0] if matching_templates else "Unknown Template"
-            
-            # Get template details
-            template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
-            
-            # Determine if query is general
-            is_general = True if not client_query else self.is_general_query(client_query)
-            
-            # Base result with template information
-            result = {
-                "template": template_name,
-                "template_details": template_details,
-                "is_general_query": is_general,
-                "requires_manual_review": not is_general,
-                "template_json": json.dumps(template_details, indent=2)
-            }
-            
-            # Generate JSON filter if applicable
-            if client_query:
-                json_filter = self.generate_json_path_filter({
-                    "template": template_name,
-                    "alert_summary": alert_summary,
-                    "feedback": client_query,
-                
-                })
-                if json_filter:
-                    result["json_filter"] = json_filter
-            
-            # Only add analysis for general queries (Phase 1)
-            if is_general:
-                analysis_result = self.generate_analysis(
-                    template_name,
-                    template_details,
-                    alert_summary,
-                    client_query,
-                    is_general
-                )
-                result["analysis"] = analysis_result.get("analysis")
-            
-            return result
+       Available Templates and their contexts:
+       1. Anomalous Internal Traffic - For detecting unusual network traffic patterns between internal assets.
+       2. Blacklisted IP - For traffic involving known malicious or blacklisted IP addresses.
+       3. DNS Queries to bad domains - For detection of DNS queries to known malicious domains.
+       4. Anomalous Internet Traffic: Size - For unusual increases in traffic size to/from the internet.
+       5. Anomalous Internet Traffic: Packets - For detecting unusual increases in packet counts to/from the internet.
+       6. Anomalous Internet Traffic: Sessions - For detecting unusual increases in session counts.
+       7. Anonymization Services IP - For traffic involving IPs associated with anonymization services.
+       8. Bots IP - For traffic involving known bot network IP addresses.
+       9. Gradient 365 alert: Unusual sign-in activity detected - For unusual sign-ins in Microsoft 365, indicating potential unauthorized access.
+       10. Evaluated Addresses - For tracking and assessing IP addresses flagged for investigation.
+       11. Scanning performed using automation tools - For detecting scanning activities typically associated with reconnaissance.
+       12. Scanning IP - For identifying IPs involved in scanning behavior against network assets
+       13. TLS Traffic to bad domains - For TLS connections to known malicious domains.
+       14. Gradient 365 alert: Sign-in from a Blacklisted IP detected - For detection of blacklisted IP sign-ins on Microsoft 365 accounts.
+       15. Social Engineering - For potential threats involving social engineering tactics.
+       16. Tor IP - For traffic involving nodes within the Tor network, which may indicate anonymized activity.
+       17. Spam IP - For traffic coming from known spam sources, potentially indicating phishing.
+       18. NTP TOR IP - For NTP requests involving Tor network nodes, suggesting potential covert activity.
+       19. Malware IP - For traffic involving IPs known to distribute or be associated with malware.
 
-        except Exception as e:
-            logger.error(f"Error in analyze_sitrep: {str(e)}")
-            return {"error": str(e)}
+       Analyze deeply:
+       1. Understand the core security issue being reported
+       2. Look at the actual security implications
+       3. Match based on the security context, not just keywords
+       4. Consider the type of threat or anomaly being detected
 
-    def find_matching_template(self, alert_summary: str) -> List[str]:
-        """Find matching templates using similarity search"""
-        matches = self.vector_store.similarity_search(alert_summary, k=1)
-        return [match.page_content for match in matches]
+       Return only the exact name of the best matching template. Return only the template name, nothing else.
+       """
 
+       try:
+           matching_template = self.llm.predict(template_matching_prompt).strip()
+           if matching_template in SITREP_TEMPLATES_DETAILED:
+               return matching_template
+           else:
+               logger.warning(f"LLM returned unrecognized template: {matching_template}")
+               return "Unknown Template"
+       except Exception as e:
+           logger.error(f"Error in template matching: {str(e)}")
+           return "Unknown Template"
 
-    def generate_analysis(self, template_name: str, template_details: Dict, 
-                     alert_summary: str, client_query: Optional[str], 
-                     is_general: bool) -> Dict:
-        """Generate concise, clear analysis in CA team style"""
-        system_prompt = SystemMessagePromptTemplate.from_template(
-            """You are a security analyst providing very concise responses.
-            Rules:
-            1. Start with "Hey" or "Hi"
-            2. State the current setting and its direct implication
-            3. Add one clear recommendation if needed
-            4. Use exactly 3 sentences maximum
-            5. End with "I hope this answers your question. Thank you!"
-            
-            Focus on clarity and brevity above all else.
-            
-            Template type: {template}
-            Query Type: {query_type}"""
-        )
-        
-        human_template = """
-        Alert Summary: {alert_summary}
-        Client Query: {query}
-        
-        Follow this exact structure:
-        "Hey,
-        [Current setting and what it means]
-        [Direct implication]
-        [One clear recommendation if needed]
-        I hope this answers your question. Thank you!"
-        
-        Example format:
-        "Hey,
-        The issue is that the password policy requires a minimum length of 12 characters, but the audit for this setting is not enabled (set to -1). This means you won't be able to track compliance with the password policy effectively. It's recommended to enable the password length audit to monitor adherence to the policy.
-        I hope this answers your question. Thank you!"
-        """
-        
-        # Generate analysis
-        chat_prompt = ChatPromptTemplate.from_messages([system_prompt, human_template])
-        chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-        
-        analysis = chain.run(
-            template=template_name,
-            query_type="General" if is_general else "Specific",
-            is_general=is_general,
-            alert_summary=alert_summary,
-            query=client_query or "No specific query"
-        )
-        
-        # Prepare response with template data
-        return {
-            "template": template_name,
-            "template_details": template_details,
-            "analysis": analysis,
-            "is_general_query": is_general,
-            "requires_manual_review": not is_general,
-            "template_json": json.dumps(template_details, indent=2)
-        }
-        
-        # Prepare response with template data
-        return {
-            "template": template_name,
-            "template_details": template_details,
-            "analysis": analysis,
-            "is_general_query": is_general,
-            "requires_manual_review": not is_general,
-            "template_json": json.dumps(template_details, indent=2)
-        }
+   def is_general_query(self, query: str) -> bool:
+       """Determine if a query is general or specific using LLM"""
+       query_analysis_prompt = f"""
+       Analyze if this query is general or specific to customer logs/systems:
+       Query: {query}
+
+       Guide:
+       - General queries ask about understanding alerts, security concepts, or general procedures
+       - Specific queries reference customer data, specific systems, or require log analysis
+       
+       Examples:
+       General: "What does this alert mean?"
+       Specific: "Why did we see this traffic spike yesterday?"
+
+       Return only 'general' or 'specific'.
+       """
+
+       try:
+           response = self.llm.predict(query_analysis_prompt)
+           return response.strip().lower() == "general"
+       except Exception as e:
+           logger.error(f"Error in query classification: {str(e)}")
+           return False
+
+   def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
+       """Generate JSON path filters based on sitrep data"""
+       try:
+           filter_prompt = f"""
+           Create a JSON path filter based on this security alert:
+           Template: {sitrep_data.get('template', '')}
+           Alert Summary: {sitrep_data.get('alert_summary', '')}
+           Customer Query: {sitrep_data.get('feedback', '')}
+
+           Generate a JSON filter that would help process similar alerts.
+           Include:
+           1. Key paths to monitor
+           2. Conditions to match
+           3. Thresholds or patterns to detect
+
+           Return only valid JSON without explanation.
+           """
+           
+           filter_response = self.llm.predict(filter_prompt)
+           
+           try:
+               filter_data = json.loads(filter_response)
+               filter_data["metadata"] = {
+                   "template": sitrep_data.get('template', ''),
+                   "generated_for": sitrep_data.get("alert_type", "unknown"),
+                   "query_type": "general" if self.is_general_query(sitrep_data.get("feedback", "")) else "specific"
+               }
+               return filter_data
+               
+           except json.JSONDecodeError:
+               logger.error("Failed to parse JSON filter response")
+               return None
+               
+       except Exception as e:
+           logger.error(f"Error generating JSON path filter: {str(e)}")
+           return None
+
+   def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
+       """Enhanced sitrep analysis with LLM-based template matching"""
+       try:
+           # Find matching template using LLM
+           template_name = self.find_matching_template(alert_summary)
+           template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
+           
+           # Determine if query is general using LLM
+           is_general = True if not client_query else self.is_general_query(client_query)
+           
+           result = {
+               "template": template_name,
+               "template_details": template_details,
+               "is_general_query": is_general,
+               "requires_manual_review": not is_general,
+               "template_json": json.dumps(template_details, indent=2)
+           }
+           
+           if client_query:
+               json_filter = self.generate_json_path_filter({
+                   "template": template_name,
+                   "alert_summary": alert_summary,
+                   "feedback": client_query
+               })
+               if json_filter:
+                   result["json_filter"] = json_filter
+           
+           if is_general:
+               analysis_result = self.generate_analysis(
+                   template_name,
+                   template_details,
+                   alert_summary,
+                   client_query,
+                   is_general
+               )
+               result["analysis"] = analysis_result.get("analysis")
+           
+           return result
+
+       except Exception as e:
+           logger.error(f"Error in analyze_sitrep: {str(e)}")
+           return {"error": str(e)}
+
+   def generate_analysis(self, template_name: str, template_details: Dict, 
+                    alert_summary: str, client_query: Optional[str], 
+                    is_general: bool) -> Dict:
+       """Generate analysis using LLM"""
+       system_prompt = SystemMessagePromptTemplate.from_template(
+           """You are a seniour security analyst providing clear,accurate and concise responses.
+           Rules:
+           1. Start with "Hey" or "Hi"
+           2. State the current security context and its implication
+           3. Add one clear recommendation 
+           4. Use exactly 3-5 sentences maximum
+           5. End with "I hope this answers your question. Thank you!"
+           
+           Template type: {template}
+           Query Type: {query_type}"""
+       )
+       
+       human_template = """
+       Alert Summary: {alert_summary}
+       Client Query: {query}
+       
+       Provide a clear, concise explanation of:
+       1. What the alert means
+       2. Why it matters
+       3. What action is recommended (if any)
+       
+       Follow the exact format described in the system prompt.
+       """
+       
+       chat_prompt = ChatPromptTemplate.from_messages([system_prompt, human_template])
+       chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+       
+       analysis = chain.run(
+           template=template_name,
+           query_type="General" if is_general else "Specific",
+           is_general=is_general,
+           alert_summary=alert_summary,
+           query=client_query or "No specific query"
+       )
+       
+       return {
+           "template": template_name,
+           "template_details": template_details,
+           "analysis": analysis,
+           "is_general_query": is_general,
+           "requires_manual_review": not is_general,
+           "template_json": json.dumps(template_details, indent=2)
+       }
 
 def main():
-    st.set_page_config(page_title="Sitrep Analyzer", layout="wide")
-    
-    # Add custom CSS
-    st.markdown("""
-        <style>
-        .json-box {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 5px solid #28a745;
-            font-family: monospace;
-            white-space: pre-wrap;
-        }
-        .automation-box {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 5px solid #17a2b8;
-        }
-        .manual-review-box {
-            background-color: #fff3cd;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 5px solid #ffc107;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    analyzer = SitrepAnalyzer()
-    
-    # Main interface
-    st.title("Sitrep Analysis System")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("Alert Summary")
-        alert_summary = st.text_area(
-            "Paste your security alert details here",
-            height=300
-        )
-        
-    with col2:
-        st.subheader("Client Query")
-        client_query = st.text_area(
-            "Enter client questions or feedback",
-            height=150
-        )
-        
-        # Add JSON view options
-        st.subheader("JSON Display Options")
-        show_template_json = st.checkbox("Show Template JSON", value=False)
-        show_filter_json = st.checkbox("Show Generated Filters", value=True)
-    
-    if st.button("Analyze Alert", type="primary"):
-        if not alert_summary:
-            st.error("Please enter an alert summary to analyze.")
-            return
-        
-        with st.spinner("Analyzing security alert..."):
-            result = analyzer.analyze_sitrep(alert_summary, client_query)
-            
-            if "error" in result:
-                st.error(result["error"])
-            else:
-                # Always show template details
-                st.subheader("Template Match")
-                st.json({
-                    "Template": result["template"],
-                })
-                
-                # Always show template JSON if requested
-                if show_template_json:
-                    st.subheader("Template JSON")
-                    st.markdown(f"""
-                        <div class="json-box">
-                        {result["template_json"]}
-                        </div>
-                    """, unsafe_allow_html=True)
-                
-                # Always show JSON filter if available and requested
-                if show_filter_json and "json_filter" in result:
-                    st.subheader("Generated JSON Filter")
-                    st.json(result["json_filter"])
-                
-                # Show manual review message or analysis based on query type
-                if result.get("requires_manual_review"):
-                    st.markdown("""
-                        <div class="manual-review-box">
-                        <h4>👥 Manual Review Required</h4>
-                        <p>This query requires specific analysis of customer logs or systems.</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                else:
-                    st.markdown("""
-                        <div class="automation-box">
-                        <h4>🤖 Automated Processing</h4>
-                        <p>This query has been identified as a general inquiry and can be handled automatically.</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Only show analysis for general queries
-                    if "analysis" in result:
-                        st.subheader("Analysis")
-                        st.markdown(result["analysis"])
-                
-                # Display JSON filter if available and requested
-                if show_filter_json and "json_filter" in result:
-                    st.subheader("Generated JSON Filter")
-                    st.json(result["json_filter"])
-                
-            
+   st.set_page_config(page_title="Sitrep Analyzer", layout="wide")
+   
+   st.markdown("""
+       <style>
+       .json-box {
+           background-color: #f8f9fa;
+           padding: 15px;
+           border-radius: 8px;
+           border-left: 5px solid #28a745;
+           font-family: monospace;
+           white-space: pre-wrap;
+       }
+       .automation-box {
+           background-color: #f8f9fa;
+           padding: 15px;
+           border-radius: 8px;
+           border-left: 5px solid #17a2b8;
+       }
+       .manual-review-box {
+           background-color: #fff3cd;
+           padding: 15px;
+           border-radius: 8px;
+           border-left: 5px solid #ffc107;
+       }
+       </style>
+   """, unsafe_allow_html=True)
+   
+   analyzer = SitrepAnalyzer()
+   
+   st.title("Sitrep Analysis System")
+   
+   col1, col2 = st.columns([2, 1])
+   
+   with col1:
+       st.subheader("Alert Summary")
+       alert_summary = st.text_area(
+           "Paste your security alert details here",
+           height=300
+       )
+       
+   with col2:
+       st.subheader("Client Query")
+       client_query = st.text_area(
+           "Enter client questions or feedback",
+           height=150
+       )
+       
+       st.subheader("JSON Display Options")
+       show_template_json = st.checkbox("Show Template JSON", value=False)
+       show_filter_json = st.checkbox("Show Generated Filters", value=True)
+   
+   if st.button("Analyze Alert", type="primary"):
+       if not alert_summary:
+           st.error("Please enter an alert summary to analyze.")
+           return
+       
+       with st.spinner("Analyzing security alert..."):
+           result = analyzer.analyze_sitrep(alert_summary, client_query)
+           
+           if "error" in result:
+               st.error(result["error"])
+           else:
+               st.subheader("Template Match")
+               st.json({
+                   "Template": result["template"],
+               })
+               
+               if show_template_json:
+                   st.subheader("Template JSON")
+                   st.markdown(f"""
+                       <div class="json-box">
+                       {result["template_json"]}
+                       </div>
+                   """, unsafe_allow_html=True)
+               
+               if show_filter_json and "json_filter" in result:
+                   st.subheader("Generated JSON Filter")
+                   st.json(result["json_filter"])
+               
+               if result.get("requires_manual_review"):
+                   st.markdown("""
+                       <div class="manual-review-box">
+                       <h4>👥 Manual Review Required</h4>
+                       <p>This query requires specific analysis of customer logs or systems.</p>
+                       </div>
+                   """, unsafe_allow_html=True)
+               else:
+                   st.markdown("""
+                       <div class="automation-box">
+                       <h4>🤖 Automated Processing</h4>
+                       <p>This query has been identified as a general inquiry and can be handled automatically.</p>
+                       </div>
+                   """, unsafe_allow_html=True)
+                   
+                   if "analysis" in result:
+                       st.subheader("Analysis")
+                       st.markdown(result["analysis"])
+               
+               if show_filter_json and "json_filter" in result:
+                   st.subheader("Generated JSON Filter")
+                   st.json(result["json_filter"])
 
 if __name__ == "__main__":
-    main()
+   main()
