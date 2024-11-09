@@ -1540,31 +1540,31 @@ def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None)
         logger.error(f"Error in analyze_sitrep: {str(e)}")
         return {"error": str(e)}
 
-# In the main Streamlit UI section:
-if result.get("requires_manual_review"):
-    if result.get("phase") == 2:
-        st.markdown(f"""
-            <div class="manual-review-box" style="background-color: #e9ecef;">
-            <h4>🔧 Phase 2: {result.get('type')}</h4>
-            <p>{result.get('details')}</p>
-            <p><em>Reason: {result.get('reason')}</em></p>
-            </div>
-        """, unsafe_allow_html=True)
-    elif result.get("phase") == 3:
-        st.markdown(f"""
-            <div class="manual-review-box" style="background-color: #fff3cd;">
-            <h4>🔍 Phase 3: {result.get('type')}</h4>
-            <p>{result.get('details')}</p>
-            <p><em>Reason: {result.get('reason')}</em></p>
-            </div>
-        """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-        <div class="automation-box">
-        <h4>🤖 Automated Processing</h4>
-        <p>This query has been identified as a general inquiry and can be handled automatically.</p>
-        </div>
-    """, unsafe_allow_html=True)
+        # In the main Streamlit UI section:
+        if result.get("requires_manual_review"):
+            if result.get("phase") == 2:
+                st.markdown(f"""
+                    <div class="manual-review-box" style="background-color: #e9ecef;">
+                    <h4>🔧 Phase 2: {result.get('type')}</h4>
+                    <p>{result.get('details')}</p>
+                    <p><em>Reason: {result.get('reason')}</em></p>
+                    </div>
+                """, unsafe_allow_html=True)
+            elif result.get("phase") == 3:
+                st.markdown(f"""
+                    <div class="manual-review-box" style="background-color: #fff3cd;">
+                    <h4>🔍 Phase 3: {result.get('type')}</h4>
+                    <p>{result.get('details')}</p>
+                    <p><em>Reason: {result.get('reason')}</em></p>
+                    </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+                <div class="automation-box">
+                <h4>🤖 Automated Processing</h4>
+                <p>This query has been identified as a general inquiry and can be handled automatically.</p>
+                </div>
+            """, unsafe_allow_html=True)
     
    def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
        """Generate JSON path filters based on sitrep data"""
