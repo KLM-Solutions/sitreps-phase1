@@ -1566,42 +1566,42 @@ def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None)
                 </div>
             """, unsafe_allow_html=True)
     
-   def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
-       """Generate JSON path filters based on sitrep data"""
-       try:
-           filter_prompt = f"""
-           Create a JSON path filter based on this security alert:
-           Template: {sitrep_data.get('template', '')}
-           Alert Summary: {sitrep_data.get('alert_summary', '')}
-           Customer Query: {sitrep_data.get('feedback', '')}
-
-           Generate a JSON filter that would help process similar alerts.
-           Include:
-           1. Key paths to monitor
-           2. Conditions to match
-           3. Thresholds or patterns to detect
-
-           Return only valid JSON without explanation.
-           """
-           
-           filter_response = self.llm.predict(filter_prompt)
-           
+       def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
+           """Generate JSON path filters based on sitrep data"""
            try:
-               filter_data = json.loads(filter_response)
-               filter_data["metadata"] = {
-                   "template": sitrep_data.get('template', ''),
-                   "generated_for": sitrep_data.get("alert_type", "unknown"),
-                   "query_type": "general" if self.is_general_query(sitrep_data.get("feedback", "")) else "specific"
-               }
-               return filter_data
+               filter_prompt = f"""
+               Create a JSON path filter based on this security alert:
+               Template: {sitrep_data.get('template', '')}
+               Alert Summary: {sitrep_data.get('alert_summary', '')}
+               Customer Query: {sitrep_data.get('feedback', '')}
+    
+               Generate a JSON filter that would help process similar alerts.
+               Include:
+               1. Key paths to monitor
+               2. Conditions to match
+               3. Thresholds or patterns to detect
+    
+               Return only valid JSON without explanation.
+               """
                
-           except json.JSONDecodeError:
-               logger.error("Failed to parse JSON filter response")
+               filter_response = self.llm.predict(filter_prompt)
+               
+               try:
+                   filter_data = json.loads(filter_response)
+                   filter_data["metadata"] = {
+                       "template": sitrep_data.get('template', ''),
+                       "generated_for": sitrep_data.get("alert_type", "unknown"),
+                       "query_type": "general" if self.is_general_query(sitrep_data.get("feedback", "")) else "specific"
+                   }
+                   return filter_data
+                   
+               except json.JSONDecodeError:
+                   logger.error("Failed to parse JSON filter response")
+                   return None
+                   
+           except Exception as e:
+               logger.error(f"Error generating JSON path filter: {str(e)}")
                return None
-               
-       except Exception as e:
-           logger.error(f"Error generating JSON path filter: {str(e)}")
-           return None
 
    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
        """Enhanced sitrep analysis with LLM-based template matching"""
