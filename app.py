@@ -1384,224 +1384,43 @@ I will analyze it and:
        except Exception as e:
            logger.error(f"Error in query classification: {str(e)}")
            return False
-   def determine_review_phase(self, query: str) -> Dict[str, any]:
-    """Determine if query is Phase 2 or Phase 3 based on specific criteria"""
-    
-    # Phase 2 indicators (Filter Creation)
-    phase_2_indicators = {
-        "explicit_filter_requests": [
-            "filter it out",
-            "do not alarm",
-            "exclude this traffic",
-            "don't generate alert",
-            "suppress alerts",
-            "whitelist",
-            "please filter",
-            "create a filter"
-        ],
-        "filter_contexts": [
-            "expected traffic",
-            "routine traffic",
-            "normal traffic",
-            "business requirement",
-            "legitimate traffic",
-            "authorized traffic"
-        ],
-        "ip_filtering": [
-            "ip list",
-            "ip range",
-            "ip addresses",
-            "subnet",
-            "cidr"
-        ]
-    }
-    
-    # Phase 3 indicators (Data Analysis)
-    phase_3_indicators = {
-        "investigation_requests": [
-            "investigate further",
-            "look into",
-            "can you confirm",
-            "provide insights",
-            "analyze",
-            "check logs"
-        ],
-        "specific_queries": [
-            "what device",
-            "which source ip",
-            "traffic spikes",
-            "unusual activity",
-            "source of this",
-            "sign-in activities",
-            "what is this traffic",
-            "where it is originating"
-        ],
-        "data_analysis": [
-            "pattern",
-            "breakdown",
-            "historical data",
-            "traffic analysis",
-            "behavior",
-            "logs show"
-        ]
-    }
-    
-    query = query.lower()
-    
-    # Check for Phase 2
-    is_phase_2 = False
-    phase_2_reason = []
-    
-    for category, indicators in phase_2_indicators.items():
-        for indicator in indicators:
-            if indicator.lower() in query:
-                is_phase_2 = True
-                phase_2_reason.append(f"Contains {category}: '{indicator}'")
-    
-    if is_phase_2:
-        return {
-            "phase": 2,
-            "reason": " AND ".join(phase_2_reason),
-            "type": "Filter Creation Required",
-            "details": "Client has requested creation of specific filters or whitelisting rules"
-        }
-    
-    # Check for Phase 3
-    is_phase_3 = False
-    phase_3_reason = []
-    
-    for category, indicators in phase_3_indicators.items():
-        for indicator in indicators:
-            if indicator.lower() in query:
-                is_phase_3 = True
-                phase_3_reason.append(f"Contains {category}: '{indicator}'")
-    
-    if is_phase_3:
-        return {
-            "phase": 3,
-            "reason": " AND ".join(phase_3_reason),
-            "type": "Data Analysis Required",
-            "details": "Client has requested specific investigation of their data/logs"
-        }
-    
-    # Default to Phase 3 for any non-general query that didn't match Phase 2
-    return {
-        "phase": 3,
-        "reason": "Complex query requiring data analysis",
-        "type": "Data Analysis Required",
-        "details": "Query requires detailed analysis of customer data"
-    }
 
-def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-    """Enhanced sitrep analysis with detailed phase detection"""
-    try:
-        # Find matching template using LLM
-        template_name = self.find_matching_template(alert_summary)
-        template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
-        
-        # Determine if query is general using LLM
-        is_general = True if not client_query else self.is_general_query(client_query)
-        
-        result = {
-            "template": template_name,
-            "template_details": template_details,
-            "is_general_query": is_general,
-            "requires_manual_review": not is_general,
-            "template_json": json.dumps(template_details, indent=2)
-        }
-        
-        if client_query and not is_general:
-            # Determine specific phase for manual review cases
-            phase_info = self.determine_review_phase(client_query)
-            result.update(phase_info)
-        
-        if client_query:
-            json_filter = self.generate_json_path_filter({
-                "template": template_name,
-                "alert_summary": alert_summary,
-                "feedback": client_query
-            })
-            if json_filter:
-                result["json_filter"] = json_filter
-        
-        if is_general:
-            analysis_result = self.generate_analysis(
-                template_name,
-                template_details,
-                alert_summary,
-                client_query,
-                is_general
-            )
-            result["analysis"] = analysis_result.get("analysis")
-        
-        return result
+   def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
+       """Generate JSON path filters based on sitrep data"""
+       try:
+           filter_prompt = f"""
+           Create a JSON path filter based on this security alert:
+           Template: {sitrep_data.get('template', '')}
+           Alert Summary: {sitrep_data.get('alert_summary', '')}
+           Customer Query: {sitrep_data.get('feedback', '')}
 
-    except Exception as e:
-        logger.error(f"Error in analyze_sitrep: {str(e)}")
-        return {"error": str(e)}
+           Generate a JSON filter that would help process similar alerts.
+           Include:
+           1. Key paths to monitor
+           2. Conditions to match
+           3. Thresholds or patterns to detect
 
-        # In the main Streamlit UI section:
-        if result.get("requires_manual_review"):
-            if result.get("phase") == 2:
-                st.markdown(f"""
-                    <div class="manual-review-box" style="background-color: #e9ecef;">
-                    <h4>🔧 Phase 2: {result.get('type')}</h4>
-                    <p>{result.get('details')}</p>
-                    <p><em>Reason: {result.get('reason')}</em></p>
-                    </div>
-                """, unsafe_allow_html=True)
-            elif result.get("phase") == 3:
-                st.markdown(f"""
-                    <div class="manual-review-box" style="background-color: #fff3cd;">
-                    <h4>🔍 Phase 3: {result.get('type')}</h4>
-                    <p>{result.get('details')}</p>
-                    <p><em>Reason: {result.get('reason')}</em></p>
-                    </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-                <div class="automation-box">
-                <h4>🤖 Automated Processing</h4>
-                <p>This query has been identified as a general inquiry and can be handled automatically.</p>
-                </div>
-            """, unsafe_allow_html=True)
-    
-       def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
-           """Generate JSON path filters based on sitrep data"""
+           Return only valid JSON without explanation.
+           """
+           
+           filter_response = self.llm.predict(filter_prompt)
+           
            try:
-               filter_prompt = f"""
-               Create a JSON path filter based on this security alert:
-               Template: {sitrep_data.get('template', '')}
-               Alert Summary: {sitrep_data.get('alert_summary', '')}
-               Customer Query: {sitrep_data.get('feedback', '')}
-    
-               Generate a JSON filter that would help process similar alerts.
-               Include:
-               1. Key paths to monitor
-               2. Conditions to match
-               3. Thresholds or patterns to detect
-    
-               Return only valid JSON without explanation.
-               """
+               filter_data = json.loads(filter_response)
+               filter_data["metadata"] = {
+                   "template": sitrep_data.get('template', ''),
+                   "generated_for": sitrep_data.get("alert_type", "unknown"),
+                   "query_type": "general" if self.is_general_query(sitrep_data.get("feedback", "")) else "specific"
+               }
+               return filter_data
                
-               filter_response = self.llm.predict(filter_prompt)
-               
-               try:
-                   filter_data = json.loads(filter_response)
-                   filter_data["metadata"] = {
-                       "template": sitrep_data.get('template', ''),
-                       "generated_for": sitrep_data.get("alert_type", "unknown"),
-                       "query_type": "general" if self.is_general_query(sitrep_data.get("feedback", "")) else "specific"
-                   }
-                   return filter_data
-                   
-               except json.JSONDecodeError:
-                   logger.error("Failed to parse JSON filter response")
-                   return None
-                   
-           except Exception as e:
-               logger.error(f"Error generating JSON path filter: {str(e)}")
+           except json.JSONDecodeError:
+               logger.error("Failed to parse JSON filter response")
                return None
+               
+       except Exception as e:
+           logger.error(f"Error generating JSON path filter: {str(e)}")
+           return None
 
    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
        """Enhanced sitrep analysis with LLM-based template matching"""
