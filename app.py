@@ -1295,6 +1295,44 @@ class SitrepAnalyzer:
            temperature=0.1,
            openai_api_key=self.openai_api_key
        )
+       
+   def extract_client_metadata(self, query: str) -> Dict[str, str]:
+    """
+    Extract client metadata (name, timestamp) and clean query content
+    """
+    metadata_prompt = """
+    Given this message, extract metadata and content.
+    Rules:
+    1. IF the message starts with a name followed by timestamp, extract them
+    2. IF the message is just a question/comment, treat entire text as content
+    3. Remove any metadata from content
+
+    Input: "{query}"
+
+    Return exactly in this format (include all fields):
+    {{"name": "extracted name or null",
+    "timestamp": "extracted timestamp or null",
+    "content": "cleaned message content"}}
+
+    Examples:
+    Input: "Wade Jones, Tue, 29 Oct 2024 15:34:26 GMT\nNot sure I understand what you are trying to tell me?"
+    Output: {{"name": "Wade Jones", "timestamp": "Tue, 29 Oct 2024 15:34:26 GMT", "content": "Not sure I understand what you are trying to tell me?"}}
+
+    Input: "Not sure I understand what you are trying to tell me?"
+    Output: {{"name": null, "timestamp": null, "content": "Not sure I understand what you are trying to tell me?"}}
+    """
+    
+    try:
+        response = self.llm.predict(metadata_prompt.format(query=query))
+        metadata = json.loads(response)
+        return metadata
+    except Exception as e:
+        logger.error(f"Error extracting metadata: {str(e)}")
+        return {
+            "name": None,
+            "timestamp": None,
+            "content": query
+        }
 
    def find_matching_template(self, alert_summary: str) -> str:
        """Find matching template using LLM understanding"""
@@ -1362,28 +1400,32 @@ I will analyze it and:
            return "Unknown Template"
 
    def is_general_query(self, query: str) -> bool:
-       """Determine if a query is general or specific using LLM"""
-       query_analysis_prompt = f"""
-       Analyze if this query is general or specific to customer logs/systems:
-       Query: {query}
+    """Determine if a query is general or specific using LLM"""
+    # Extract only the content part of the query
+    metadata = self.extract_client_metadata(query)
+    query_content = metadata["content"]
+    
+    query_analysis_prompt = f"""
+    Analyze if this query is general or specific to customer logs/systems:
+    Query: {query_content}
 
-       Guide:
-       - General queries ask about understanding alerts, security concepts, or general procedures
-       - Specific queries reference customer data, specific systems, or require log analysis
-       
-       Examples:
-       General: "What does this alert mean?"
-       Specific: "Why did we see this traffic spike yesterday?"
+    Guide:
+    - General queries ask about understanding alerts, security concepts, or general procedures
+    - Specific queries reference customer data, specific systems, or require log analysis
+    
+    Examples:
+    General: "What does this alert mean?", "Not sure I understand what you are trying to tell me?"
+    Specific: "Why did we see this traffic spike yesterday?"
 
-       Return only 'general' or 'specific'.
-       """
+    Return only 'general' or 'specific'.
+    """
 
-       try:
-           response = self.llm.predict(query_analysis_prompt)
-           return response.strip().lower() == "general"
-       except Exception as e:
-           logger.error(f"Error in query classification: {str(e)}")
-           return False
+    try:
+        response = self.llm.predict(query_analysis_prompt)
+        return response.strip().lower() == "general"
+    except Exception as e:
+        logger.error(f"Error in query classification: {str(e)}")
+        return False
 
    def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
        """Generate JSON path filters based on sitrep data"""
@@ -1423,96 +1465,111 @@ I will analyze it and:
            return None
 
    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-       """Enhanced sitrep analysis with LLM-based template matching"""
-       try:
-           # Find matching template using LLM
-           template_name = self.find_matching_template(alert_summary)
-           template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
-           
-           # Determine if query is general using LLM
-           is_general = True if not client_query else self.is_general_query(client_query)
-           
-           result = {
-               "template": template_name,
-               "template_details": template_details,
-               "is_general_query": is_general,
-               "requires_manual_review": not is_general,
-               "template_json": json.dumps(template_details, indent=2)
-           }
-           
-           if client_query:
-               json_filter = self.generate_json_path_filter({
-                   "template": template_name,
-                   "alert_summary": alert_summary,
-                   "feedback": client_query
-               })
-               if json_filter:
-                   result["json_filter"] = json_filter
-           
-           if is_general:
-               analysis_result = self.generate_analysis(
-                   template_name,
-                   template_details,
-                   alert_summary,
-                   client_query,
-                   is_general
-               )
-               result["analysis"] = analysis_result.get("analysis")
-           
-           return result
+    """Main analysis method with enhanced metadata handling"""
+    try:
+        template_name = self.find_matching_template(alert_summary)
+        template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
+        
+        # Extract metadata and clean content first
+        metadata = self.extract_client_metadata(client_query) if client_query else {
+            "name": None,
+            "timestamp": None,
+            "content": ""
+        }
+        
+        # Use cleaned content for general/specific classification
+        is_general = True if not client_query else self.is_general_query(metadata["content"])
+        
+        result = {
+            "template": template_name,
+            "template_details": template_details,
+            "is_general_query": is_general,
+            "requires_manual_review": not is_general,
+            "template_json": json.dumps(template_details, indent=2)
+        }
+        
+        if client_query:
+            json_filter = self.generate_json_path_filter({
+                "template": template_name,
+                "alert_summary": alert_summary,
+                "feedback": metadata["content"]  # Use cleaned content
+            })
+            if json_filter:
+                result["json_filter"] = json_filter
+        
+        if is_general:
+            analysis_result = self.generate_analysis(
+                template_name,
+                template_details,
+                alert_summary,
+                client_query,
+                is_general
+            )
+            result["analysis"] = analysis_result.get("analysis")
+        
+        return result
 
-       except Exception as e:
-           logger.error(f"Error in analyze_sitrep: {str(e)}")
-           return {"error": str(e)}
+    except Exception as e:
+        logger.error(f"Error in analyze_sitrep: {str(e)}")
+        return {"error": str(e)}
 
    def generate_analysis(self, template_name: str, template_details: Dict, 
-                    alert_summary: str, client_query: Optional[str], 
-                    is_general: bool) -> Dict:
-       """Generate analysis using LLM"""
-       system_prompt = SystemMessagePromptTemplate.from_template(
-           """You are a seniour security analyst providing clear,accurate and concise responses.
-           Rules:
-           1. Start with "Hey" or "Hi"
-           2. State the current security context and its implication
-           3. Add one clear recommendation that should tell by "we" not "I"
-           4. Use exactly 3-5 sentences maximum
-           5. End with "We hope this answers your question. Thank you! GradientCyber Team"
-           
-           Template type: {template}
-           Query Type: {query_type}"""
-       )
-       
-       human_template = """
-       Alert Summary: {alert_summary}
-       Client Query: {query}
-       
-       Provide a clear, concise explanation of:
-       1. What the alert means
-       2. Why it matters
-       3. What action is recommended (if any)
-       
-       Follow the exact format described in the system prompt.
-       """
-       
-       chat_prompt = ChatPromptTemplate.from_messages([system_prompt, human_template])
-       chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-       
-       analysis = chain.run(
-           template=template_name,
-           query_type="General" if is_general else "Specific",
-           is_general=is_general,
-           alert_summary=alert_summary,
-           query=client_query or "No specific query"
-       )
-       
-       return {
-           "template": template_name,
-           "template_details": template_details,
-           "analysis": analysis,
-           "is_general_query": is_general,
-           "requires_manual_review": not is_general,
-           "template_json": json.dumps(template_details, indent=2)
-       }
+                     alert_summary: str, client_query: Optional[str], 
+                     is_general: bool) -> Dict:
+    """Generate analysis using LLM with personalized response"""
+    # Extract metadata and clean content
+    metadata = self.extract_client_metadata(client_query) if client_query else {
+        "name": None,
+        "timestamp": None,
+        "content": client_query or ""
+    }
+
+    system_prompt = SystemMessagePromptTemplate.from_template(
+        """You are a senior security analyst providing clear, accurate and concise responses.
+        Rules:
+        1. Start with "{greeting}"
+        2. State the current security context and its implication
+        3. Add one clear recommendation that should tell by "we" not "I"
+        4. Use exactly 3-5 sentences maximum
+        5. End with "We hope this answers your question. Thank you! Gradient Cyber Team"
+        
+        Template type: {template}
+        Query Type: {query_type}"""
+    )
+    
+    human_template = """
+    Alert Summary: {alert_summary}
+    Client Query: {query}
+    
+    Provide a clear, concise explanation of:
+    1. What the alert means
+    2. Why it matters
+    3. What action is recommended (if any)
+    
+    Follow the exact format described in the system prompt.
+    """
+    
+    greeting = f"Hey {metadata['name']}" if metadata['name'] else "Hey"
+    
+    chat_prompt = ChatPromptTemplate.from_messages([system_prompt, human_template])
+    chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+    
+    analysis = chain.run(
+        greeting=greeting,
+        template=template_name,
+        query_type="General" if is_general else "Specific",
+        alert_summary=alert_summary,
+        query=metadata["content"]
+    )
+    
+    return {
+        "template": template_name,
+        "template_details": template_details,
+        "analysis": analysis.strip(),
+        "is_general_query": is_general,
+        "requires_manual_review": not is_general,
+        "template_json": json.dumps(template_details, indent=2)
+    }
 
 def main():
    st.set_page_config(page_title="Sitrep Analyzer", layout="wide")
