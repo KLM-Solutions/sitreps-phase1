@@ -1474,9 +1474,9 @@ I will analyze it and:
            Rules:
            1. Start with "Hey" or "Hi"
            2. State the current security context and its implication
-           3. Add one clear recommendation 
+           3. Add one clear recommendation that should tell by "we" not "I"
            4. Use exactly 3-5 sentences maximum
-           5. End with "We hope this answers your question. Thank you!"
+           5. End with "We hope this answers your question. Thank you! GradientCyber Team"
            
            Template type: {template}
            Query Type: {query_type}"""
