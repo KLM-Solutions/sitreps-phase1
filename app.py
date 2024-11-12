@@ -1347,7 +1347,7 @@ I will analyze it and:
        3. Match based on the security context, not just keywords
        4. Consider the type of threat or anomaly being detected
 
-       Return only the exact name of the best matching template. Return only the template name, nothing else.
+       Return only the exact name of the best matching template. Return only the template name, nothing else.check twice to match the correct template.
        """
 
        try:
@@ -1476,7 +1476,7 @@ I will analyze it and:
            2. State the current security context and its implication
            3. Add one clear recommendation 
            4. Use exactly 3-5 sentences maximum
-           5. End with "I hope this answers your question. Thank you!"
+           5. End with "We hope this answers your question. Thank you!"
            
            Template type: {template}
            Query Type: {query_type}"""
