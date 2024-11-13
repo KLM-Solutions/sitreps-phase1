@@ -1284,8 +1284,7 @@ Perimeter (CM)
 class SitrepAnalyzer:
    def __init__(self):
        # Only use environment variable for API key
-       self.openai_api_key = os.getenv("OPENAI_API_KEY")
-           
+       self.openai_api_key = os.getenv("OPENAI_API_KEY") 
        if not self.openai_api_key:
            raise ValueError("OpenAI API key not found in environment variables. Please set OPENAI_API_KEY.")
            
@@ -1306,6 +1305,9 @@ class SitrepAnalyzer:
     1. IF the message starts with a name followed by timestamp, extract them
     2. IF the message is just a question/comment, treat entire text as content
     3. Remove any metadata from content
+if
+    4. Check the content, if the content is just a information just say the greeting message like thank you...etc make by own llm
+else
 
     Input: "{query}"
 
@@ -1427,6 +1429,33 @@ I will analyze it and:
         logger.error(f"Error in query classification: {str(e)}")
         return False
 
+   def is_acknowledgment(self, query: str) -> bool:
+        """Determine if query is an acknowledgment rather than a question"""
+        ack_prompt = f"""
+        Analyze if this message is an acknowledgment/statement or a question:
+        Message: {query}
+        
+        Examples of acknowledgments/statements:
+        - "I received the documents"
+        - "This traffic is expected"
+        - "Thank you for the information"
+        - "This is from our normal operations"
+        
+        Examples of questions:
+        - "Why did this happen?"
+        - "What does this mean?"
+        - "Should I be concerned?"
+        
+        Return only 'acknowledgment' or 'question'.
+        """
+        
+        try:
+            response = self.llm.predict(ack_prompt).strip().lower()
+            return response == 'acknowledgment'
+        except Exception as e:
+            logger.error(f"Error in acknowledgment detection: {str(e)}")
+            return False
+
    def generate_json_path_filter(self, sitrep_data: Dict) -> Optional[Dict]:
        """Generate JSON path filters based on sitrep data"""
        try:
@@ -1513,63 +1542,70 @@ I will analyze it and:
         logger.error(f"Error in analyze_sitrep: {str(e)}")
         return {"error": str(e)}
 
-   def generate_analysis(self, template_name: str, template_details: Dict, 
-                     alert_summary: str, client_query: Optional[str], 
-                     is_general: bool) -> Dict:
-    """Generate analysis using LLM with personalized response"""
-    # Extract metadata and clean content
-    metadata = self.extract_client_metadata(client_query) if client_query else {
-        "name": None,
-        "timestamp": None,
-        "content": client_query or ""
-    }
+    
 
-    system_prompt = SystemMessagePromptTemplate.from_template(
-        """You are a senior security analyst providing clear, accurate and concise responses.
-        Rules:
-        1. Start with "{greeting}"
-        2. State the current security context and its implication
-        3. Add one clear recommendation that should tell by "we" not "I"
-        4. Use exactly 3-5 sentences maximum
-        5. End with "We hope this answers your question. Thank you! Gradient Cyber Team"
+   def generate_analysis(self, template_name: str, template_details: Dict, 
+                         alert_summary: str, client_query: Optional[str], 
+                         is_general: bool) -> Dict:
+        """Generate analysis based on query type"""
+        metadata = self.extract_client_metadata(client_query) if client_query else {
+            "name": None,
+            "timestamp": None,
+            "content": client_query or ""
+        }
         
-        Template type: {template}
-        Query Type: {query_type}"""
-    )
-    
-    human_template = """
-    Alert Summary: {alert_summary}
-    Client Query: {query}
-    
-    Provide a clear, concise explanation of:
-    1. What the alert means
-    2. Why it matters
-    3. What action is recommended (if any)
-    
-    Follow the exact format described in the system prompt.
-    """
-    
-    greeting = f"Hey {metadata['name']}" if metadata['name'] else "Hey"
-    
-    chat_prompt = ChatPromptTemplate.from_messages([system_prompt, human_template])
-    chain = LLMChain(llm=self.llm, prompt=chat_prompt)
-    
-    analysis = chain.run(
-        greeting=greeting,
-        template=template_name,
-        query_type="General" if is_general else "Specific",
-        alert_summary=alert_summary,
-        query=metadata["content"]
-    )
-    
-    return {
-        "template": template_name,
-        "template_details": template_details,
-        "analysis": analysis.strip(),
-        "is_general_query": is_general,
-        "requires_manual_review": not is_general,
-        "template_json": json.dumps(template_details, indent=2)
-    }
+        # Check if it's an acknowledgment
+        if self.is_acknowledgment(metadata["content"]):
+            greeting = f"Hey {metadata['name']}" if metadata['name'] else "Hey"
+            response = f"{greeting}, thank you for letting us know. We've noted your response. - Gradient Cyber Team"
+        else:
+            # Original analysis logic for questions
+            system_prompt = SystemMessagePromptTemplate.from_template(
+                """You are a senior security analyst providing clear, accurate and concise responses.
+                Rules:
+                1. Start with "{greeting}"
+                2. State the current security context and its implication
+                3. Add one clear recommendation that should tell by "we" not "I"
+                4. Use exactly 3-5 sentences maximum
+                5. End with "We hope this answers your question. Thank you! Gradient Cyber Team"
+                
+                Template type: {template}
+                Query Type: {query_type}"""
+            )
+            
+            human_template = """
+            Alert Summary: {alert_summary}
+            Client Query: {query}
+            
+            Provide a clear, concise explanation of:
+            1. What the alert means
+            2. Why it matters
+            3. What action is recommended (if any)
+            
+            Follow the exact format described in the system prompt.
+            """
+            
+            greeting = f"Hey {metadata['name']}" if metadata['name'] else "Hey"
+            
+            chat_prompt = ChatPromptTemplate.from_messages([system_prompt, human_template])
+            chain = LLMChain(llm=self.llm, prompt=chat_prompt)
+            
+            response = chain.run(
+                greeting=greeting,
+                template=template_name,
+                query_type="General" if is_general else "Specific",
+                alert_summary=alert_summary,
+                query=metadata["content"]
+            )
+
+        return {
+            "template": template_name,
+            "template_details": template_details,
+            "analysis": response.strip(),
+            "is_general_query": is_general,
+            "requires_manual_review": not is_general,
+            "template_json": json.dumps(template_details, indent=2)
+        }
 
 def main():
    st.set_page_config(page_title="Sitrep Analyzer", layout="wide")
