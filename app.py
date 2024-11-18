@@ -1,13 +1,13 @@
 import streamlit as st
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings 
-from langchain.chains import LLMChain
-from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-import openai
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 from typing import Dict, Optional, List
 import json
 import logging
 import os
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
