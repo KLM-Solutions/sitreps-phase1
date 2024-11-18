@@ -1,13 +1,13 @@
 import streamlit as st
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
+from langchain.chat_models import ChatOpenAI
+from langchain.embeddings import OpenAIEmbeddings 
+from langchain.chains import LLMChain
+from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+import openai
 from typing import Dict, Optional, List
 import json
 import logging
 import os
-from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1284,7 +1284,7 @@ Perimeter (CM)
 class SitrepAnalyzer:
    def __init__(self):
        # Only use environment variable for API key
-       self.openai_api_key = os.getenv("OPENAI_API_KEY") 
+       self.openai_api_key = os.getenv("OPENAI_API_KEY")
        if not self.openai_api_key:
            raise ValueError("OpenAI API key not found in environment variables. Please set OPENAI_API_KEY.")
            
