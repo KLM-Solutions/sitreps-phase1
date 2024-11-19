@@ -1763,13 +1763,15 @@ System isolation
 Malware analysis
 Incident response initiation
 
-       Analyze deeply:
-       1. Understand the core security issue being reported
-       2. Look at the actual security implications
-       3. Match based on the security context, not just keywords
-       4. Consider the type of threat or anomaly being detected
+If none of the templates match well with the alert summary, return exactly "Unknown Template".
+    Otherwise, return only the exact name of the best matching template.
 
-       Return only the exact name of the best matching template. Return only the template name, nothing else.check twice to match the correct template.
+Important: Double check your response:
+    1. If it matches any template exactly, return just that template name
+    2. If no good match exists, return exactly "Unknown Template"
+    3. Do not add any explanation or additional text
+
+       Return only the exact name of the best matching template. Return only the template name, nothing else.
        """
 
        try:
