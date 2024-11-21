@@ -1744,26 +1744,24 @@ Network policy review
 
 
 
-19. Sentinel Threat Alert
+19. Malware IP
 
-Severity: Medium
-Context: An alert triggered by Sentinel indicating potential threat activity.
+Severity: Critical
+Context: Known malware-associated IP traffic
 
-Threat Categories:
+Malware Categories:
 
-Unauthorized access attempts
-Malware detection
-Suspicious process executions
-Network anomalies
+Command & Control
+Distribution points
+Bot networks
+Ransomware infrastructure
 
 Response Actions:
 
-Device scanning for unwanted software
-User and system activity review
-Threat intelligence lookup
-Quarantine affected systems
-Incident response team notification
-
+Immediate blocking
+System isolation
+Malware analysis
+Incident response initiation
 
 
 If none of the templates match well with the alert summary, return exactly "Unknown Template".
