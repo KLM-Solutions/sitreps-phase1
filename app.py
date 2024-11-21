@@ -1284,8 +1284,7 @@ Perimeter (CM)
 class SitrepAnalyzer:
    def __init__(self):
        # Only use environment variable for API key
-       self.openai_api_key = os.getenv("OPENAI_API_KEY") 
-       if not self.openai_api_key:
+       self.openai_api_key = os.getenv("OPENAI_API_KEY")
            raise ValueError("OpenAI API key not found in environment variables. Please set OPENAI_API_KEY.")
            
        openai.api_key = self.openai_api_key
@@ -1294,7 +1293,38 @@ class SitrepAnalyzer:
            temperature=0.1,
            openai_api_key=self.openai_api_key
        )
-       
+   def identify_phase(self, query: str) -> str:
+        """Identify which phase the query belongs to"""
+        phase_prompt = f"""
+        Analyze the following query and determine if it belongs to Phase 2 or Phase 3:
+
+        Phase 2 Characteristics:
+        - Requests for filtering or excluding specific traffic
+        - Whitelisting requests
+        - Traffic suppression requests
+        - Alert filtering configuration
+        - Deals with expected or routine traffic handling
+
+        Phase 3 Characteristics:
+        - Requests for specific data analysis
+        - Investigation of anomalies
+        - Pattern analysis requests
+        - Traffic investigation
+        - System-specific insights
+        - Log analysis requests
+
+        Query: {query}
+
+        Return ONLY "Phase 2" or "Phase 3" based on the characteristics above.
+        If unclear, default to "Phase 3".
+        """
+
+        try:
+            response = self.llm.predict(phase_prompt).strip()
+            return response if response in ["Phase 2", "Phase 3"] else "Phase 3"
+        except Exception as e:
+            logger.error(f"Error in phase identification: {str(e)}")
+            return "Phase 3"    
    def extract_client_metadata(self, query: str) -> Dict[str, str]:
     """
     Extract client metadata (name, timestamp) and clean query content
@@ -1851,53 +1881,54 @@ Important: Double check your response:
            return None
 
    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
-    """Main analysis method with enhanced metadata handling"""
-    try:
-        template_name = self.find_matching_template(alert_summary)
-        template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
-        
-        # Extract metadata and clean content first
-        metadata = self.extract_client_metadata(client_query) if client_query else {
-            "name": None,
-            "timestamp": None,
-            "content": ""
-        }
-        
-        # Use cleaned content for general/specific classification
-        is_general = True if not client_query else self.is_general_query(metadata["content"])
-        
-        result = {
-            "template": template_name,
-            "template_details": template_details,
-            "is_general_query": is_general,
-            "requires_manual_review": not is_general,
-            "template_json": json.dumps(template_details, indent=2)
-        }
-        
-        if client_query:
-            json_filter = self.generate_json_path_filter({
+        try:
+            template_name = self.find_matching_template(alert_summary)
+            template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
+            
+            metadata = self.extract_client_metadata(client_query) if client_query else {
+                "name": None,
+                "timestamp": None,
+                "content": ""
+            }
+            
+            is_general = True if not client_query else self.is_general_query(metadata["content"])
+            
+            result = {
                 "template": template_name,
-                "alert_summary": alert_summary,
-                "feedback": metadata["content"]  # Use cleaned content
-            })
-            if json_filter:
-                result["json_filter"] = json_filter
-        
-        if is_general:
-            analysis_result = self.generate_analysis(
-                template_name,
-                template_details,
-                alert_summary,
-                client_query,
-                is_general
-            )
-            result["analysis"] = analysis_result.get("analysis")
-        
-        return result
+                "template_details": template_details,
+                "is_general_query": is_general,
+                "requires_manual_review": not is_general,
+                "template_json": json.dumps(template_details, indent=2)
+            }
+            
+            # Add phase identification for manual review cases
+            if not is_general and client_query:
+                result["phase"] = self.identify_phase(metadata["content"])
+            
+            if client_query:
+                json_filter = self.generate_json_path_filter({
+                    "template": template_name,
+                    "alert_summary": alert_summary,
+                    "feedback": metadata["content"]
+                })
+                if json_filter:
+                    result["json_filter"] = json_filter
+            
+            if is_general:
+                analysis_result = self.generate_analysis(
+                    template_name,
+                    template_details,
+                    alert_summary,
+                    client_query,
+                    is_general
+                )
+                result["analysis"] = analysis_result.get("analysis")
+            
+            return result
 
-    except Exception as e:
-        logger.error(f"Error in analyze_sitrep: {str(e)}")
-        return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Error in analyze_sitrep: {str(e)}")
+            return {"error": str(e)}
 
     
 
@@ -1914,7 +1945,7 @@ Important: Double check your response:
         # Check if it's an acknowledgment
         if self.is_acknowledgment(metadata["content"]):
             greeting = f"Hey {metadata['name']}" if metadata['name'] else "Hey"
-            response = f"{greeting}, thank you for letting us know. We've noted your response. - Gradient Cyber Team"
+            response = f"{greeting}, thank you for letting us know. We've noted your response. - Gradient Cyber Team !"
         else:
             # Original analysis logic for questions
             system_prompt = SystemMessagePromptTemplate.from_template(
@@ -1924,7 +1955,7 @@ Important: Double check your response:
                 2. State the current security context and its implication
                 3. Add one clear recommendation that should tell by "we" not "I"
                 4. Use exactly 3-5 sentences maximum
-                5. End with "We hope this answers your question. Thank you! Gradient Cyber Team"
+                5. End with "We hope this answers your question. Thank you! Gradient Cyber Team !"
                 
                 Template type: {template}
                 Query Type: {query_type}"""
@@ -2017,55 +2048,68 @@ def main():
        show_filter_json = st.checkbox("Show Generated Filters", value=True)
    
    if st.button("Analyze Alert", type="primary"):
-       if not alert_summary:
-           st.error("Please enter an alert summary to analyze.")
-           return
-       
-       with st.spinner("Analyzing security alert..."):
-           result = analyzer.analyze_sitrep(alert_summary, client_query)
-           
-           if "error" in result:
-               st.error(result["error"])
-           else:
-               st.subheader("Template Match")
-               st.json({
-                   "Template": result["template"],
-               })
-               
-               if show_template_json:
-                   st.subheader("Template JSON")
-                   st.markdown(f"""
-                       <div class="json-box">
-                       {result["template_json"]}
-                       </div>
-                   """, unsafe_allow_html=True)
-               
-               if show_filter_json and "json_filter" in result:
-                   st.subheader("Generated JSON Filter")
-                   st.json(result["json_filter"])
-               
-               if result.get("requires_manual_review"):
-                   st.markdown("""
-                       <div class="manual-review-box">
-                       <h4>👥 Manual Review Required</h4>
-                       <p>This query requires specific analysis of customer logs or systems.</p>
-                       </div>
-                   """, unsafe_allow_html=True)
-               else:
-                   st.markdown("""
-                       <div class="automation-box">
-                       <h4>🤖 Automated Processing</h4>
-                       <p>This query has been identified as a general inquiry and can be handled automatically.</p>
-                       </div>
-                   """, unsafe_allow_html=True)
-                   
-                   if "analysis" in result:
-                       st.subheader("Analysis")
-                       st.markdown(result["analysis"])
-               
-               if show_filter_json and "json_filter" in result:
-                   st.subheader("Generated JSON Filter")
-                   st.json(result["json_filter"])
+    if not alert_summary:
+        st.error("Please enter an alert summary to analyze.")
+        return
+    
+    with st.spinner("Analyzing security alert..."):
+        result = analyzer.analyze_sitrep(alert_summary, client_query)
+        
+        if "error" in result:
+            st.error(result["error"])
+        else:
+            st.subheader("Template Match")
+            st.json({
+                "Template": result["template"],
+            })
+            
+            if show_template_json:
+                st.subheader("Template JSON")
+                st.markdown(f"""
+                    <div class="json-box">
+                    {result["template_json"]}
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            if show_filter_json and "json_filter" in result:
+                st.subheader("Generated JSON Filter")
+                st.json(result["json_filter"])
+            
+            if result.get("requires_manual_review"):
+                st.markdown("""
+                    <div class="manual-review-box">
+                    <h4>👥 Manual Review Required</h4>
+                    <p>This query requires specific analysis of customer logs or systems.</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                # Add this new section for phase identification
+                if "phase" in result:
+                    st.markdown(f"""
+                        <div class="manual-review-box">
+                        <h4>Query Classification</h4>
+                        <p>{result["phase"]}: {
+                            "Request for traffic filtering/exclusion" if result["phase"] == "Phase 2"
+                            else "Request for specific data analysis/insights"
+                        }</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                # Add the Automated Processing section here
+                st.markdown("""
+                    <div class="automation-box">
+                    <h4>🤖 Automated Processing</h4>
+                    <p>Phase 1: This query has been identified as a general inquiry and can be handled automatically using template matching and standardized responses.</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            if "analysis" in result:
+                st.subheader("Analysis")
+                st.markdown(result["analysis"])
+            
+            if show_filter_json and "json_filter" in result:
+                st.subheader("Generated JSON Filter")
+                st.json(result["json_filter"])
 
 if __name__ == "__main__":
-   main()
+    main()
