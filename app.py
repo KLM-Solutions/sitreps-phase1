@@ -1359,409 +1359,381 @@ I will analyze it and:
 5. Note any important variations from the template
 
        Alert Summary: {alert_summary}
+Available Templates and their contexts:
+ 1. Anomalous Internal Traffic
 
-       Available Templates and their contexts:
-       1. Anomalous Internal Traffic
-
-Severity: Medium to High
-Context: Detecting unusual traffic patterns between internal assets
-Indicators:
-
-Sudden increases in east-west traffic
-Unusual port usage between internal systems
-Traffic between segments that don't normally communicate
-
-
-Response Actions:
-
-Baseline comparison analysis
-Asset relationship mapping
-Network segmentation review
-Process tree analysis on involved systems
-
-
+            Severity: Medium to High
+            Context: Detecting unusual traffic patterns between internal assets
+            Indicators:
+            
+            Sudden increases in east-west traffic
+            Unusual port usage between internal systems
+            Traffic between segments that don't normally communicate
+            
+            
+            Response Actions:
+            
+            Baseline comparison analysis
+            Asset relationship mapping
+            Network segmentation review
+            Process tree analysis on involved systems
 
 2. Blacklisted IP
 
-Severity: High
-Context: Traffic involving known malicious IP addresses
-Additional Monitoring:
+            Severity: High
+            Context: Traffic involving known malicious IP addresses
+            Additional Monitoring:
+            
+            Geographic location analysis
+            Historical communication patterns
+            Associated domain analysis
+            Type of blacklist (Command & Control, Malware, etc.)
+            
+            
+            Response Actions:
+            
+            Immediate traffic blocking
+            System isolation if internal asset involved
+            Threat hunting on communicating assets
+            IOC sharing with security team
+            DNS & Domain Threats
 
-Geographic location analysis
-Historical communication patterns
-Associated domain analysis
-Type of blacklist (Command & Control, Malware, etc.)
-
-
-Response Actions:
-
-Immediate traffic blocking
-System isolation if internal asset involved
-Threat hunting on communicating assets
-IOC sharing with security team
-
-
-
-DNS & Domain Threats
 3. DNS Queries to Bad Domains
 
-Severity: High
-Context: Detection of DNS queries to known malicious domains
-Enhanced Detection:
+            Severity: High
+            Context: Detection of DNS queries to known malicious domains
+            
+            Enhanced Detection:
+            
+            DGA (Domain Generation Algorithm) pattern analysis
+            DNS tunneling detection
+            Newly registered domain checks
+            Domain reputation scoring
+            
+            
+            Response Actions:
+            
+            DNS query blocking
+            Asset investigation
+            DNS log analysis
+            C2 communication pattern analysis
+            Volume-Based Anomalies
 
-DGA (Domain Generation Algorithm) pattern analysis
-DNS tunneling detection
-Newly registered domain checks
-Domain reputation scoring
-
-
-Response Actions:
-
-DNS query blocking
-Asset investigation
-DNS log analysis
-C2 communication pattern analysis
-
-
-
-Volume-Based Anomalies
 4. Anomalous Internet Traffic: Size
 
-Severity: Medium to High
-Context: Unusual increases in traffic volume
-Thresholds:
-
-Baseline deviation percentages
-Time-based analysis (business hours vs. non-business hours)
-Per-asset historical comparison
-
-
-Additional Monitoring:
-
-Data exfiltration patterns
-Compression ratio analysis
-Protocol analysis
-Destination categorization
-
-
-
+            Severity: Medium to High
+            Context: Unusual increases in traffic volume
+            
+            Thresholds:
+            
+            Baseline deviation percentages
+            Time-based analysis (business hours vs. non-business hours)
+            Per-asset historical comparison
+            
+            Additional Monitoring:
+            
+            Data exfiltration patterns
+            Compression ratio analysis
+            Protocol analysis
+            Destination categorization
+        
 5. Anomalous Internet Traffic: Packets
-
-Severity: Medium
-Context: Unusual packet count increases
-Analysis Factors:
-
-Packet size distribution
-Protocol distribution
-Time-based patterns
-Source/destination relationship analysis
-
-
-Response Actions:
-
-Traffic pattern analysis
-Protocol behavior analysis
-Network baseline comparison
-Asset behavior profiling
-
-
+            
+            Severity: Medium
+            Context: Unusual packet count increases
+            Analysis Factors:
+            
+            Packet size distribution
+            Protocol distribution
+            Time-based patterns
+            Source/destination relationship analysis
+            
+            
+            Response Actions:
+            
+            Traffic pattern analysis
+            Protocol behavior analysis
+            Network baseline comparison
+            Asset behavior profiling
 
 6. Anomalous Internet Traffic: Sessions
 
-Severity: Medium to High
-Context: Unusual session count increases
-Session Analysis:
+            Severity: Medium to High
+            Context: Unusual session count increases
+            Session Analysis:
+            
+            Duration patterns
+            Connection frequency
+            Protocol distribution
+            Peer relationship analysis
+            
+            
+            Response Actions:
+            
+            Session tracking
+            Connection analysis
+            User behavior analysis
+            Application usage review
+            Special Categories
 
-Duration patterns
-Connection frequency
-Protocol distribution
-Peer relationship analysis
-
-
-Response Actions:
-
-Session tracking
-Connection analysis
-User behavior analysis
-Application usage review
-
-
-
-Special Categories
 7. Anonymization Services IP
 
-Severity: Medium to High
-Context: Traffic involving anonymization service IPs
-Service Types:
-
-VPN services
-Proxy servers
-Privacy networks
-Residential proxy networks
-
-
-Response Actions:
-
-Policy compliance check
-User validation
-Traffic pattern analysis
-Business justification review
-
-
+            Severity: Medium to High
+            Context: Traffic involving anonymization service IPs
+            Service Types:
+            
+            VPN services
+            Proxy servers
+            Privacy networks
+            Residential proxy networks
+            
+            Response Actions:
+            
+            Policy compliance check
+            User validation
+            Traffic pattern analysis
+            Business justification review
 
 8. Bots IP
 
-Severity: Medium to High
-Context: Known bot network traffic
-Bot Categories:
+            Severity: Medium to High
+            Context: Known bot network traffic
+           
+            Bot Categories:
+            
+                Crawler bots
+                Scraping bots
+                DDoS bots
+                Spam bots
+            
+            Response Actions:
+            
+                Bot behavior analysis
+                Traffic pattern review
+                Rate limiting implementation
+                Access control review
+                Microsoft 365 Security
 
-Crawler bots
-Scraping bots
-DDoS bots
-Spam bots
-
-
-Response Actions:
-
-Bot behavior analysis
-Traffic pattern review
-Rate limiting implementation
-Access control review
-
-
-
-Microsoft 365 Security
 9. Gradient 365 Alert: Unusual Sign-in Activity
 
-Severity: High
-Context: Anomalous Microsoft 365 authentication
-Detection Parameters:
-
-Geographic location analysis
-Device fingerprinting
-Time-based patterns
-Multi-factor authentication status
-
-
-Response Actions:
-
-Account security review
-Authentication log analysis
-Conditional access policy review
-User notification and verification
-
-
+            Severity: High
+            Context: Anomalous Microsoft 365 authentication
+            
+            Detection Parameters:
+            
+                    Geographic location analysis
+                    Device fingerprinting
+                    Time-based patterns
+                    Multi-factor authentication status
+                        
+            Response Actions:
+            
+                    Account security review
+                    Authentication log analysis
+                    Conditional access policy review
+                    User notification and verification
 
 10. Evaluated Addresses
 
-Severity: Variable
-Context: IP investigation tracking
-Evaluation Criteria:
+                Severity: Variable
+                Context: IP investigation tracking
+                
+                Evaluation Criteria:
+                
+                    Historical behavior
+                    Reputation scores
+                    Associated incidents
+                    Network relationship analysis
+                
+                Response Actions:
+                
+                    Threat intelligence enrichment
+                    Pattern analysis
+                    Risk scoring
+                    Watch list management
+                    Scanning & Reconnaissance
 
-Historical behavior
-Reputation scores
-Associated incidents
-Network relationship analysis
-
-
-Response Actions:
-
-Threat intelligence enrichment
-Pattern analysis
-Risk scoring
-Watch list management
-
-
-
-Scanning & Reconnaissance
 11. Scanning with Automation Tools
 
-Severity: Medium to High
-Context: Automated scanning detection
-Tool Categories:
-
-Vulnerability scanners
-Port scanners
-Network mappers
-Web application scanners
-
-
-Response Actions:
-
-Tool identification
-Scan pattern analysis
-Asset exposure review
-Security control assessment
-
-
+                Severity: Medium to High
+                Context: Automated scanning detection
+                
+                Tool Categories:
+                
+                    Vulnerability scanners
+                    Port scanners
+                    Network mappers
+                    Web application scanners
+                
+                
+                Response Actions:
+                
+                    Tool identification
+                    Scan pattern analysis
+                    Asset exposure review
+                    Security control assessment
 
 12. Scanning IP
 
-Severity: Medium to High
-Context: IP-based scanning behavior
-Scanning Patterns:
+                Severity: Medium to High
+                Context: IP-based scanning behavior
+                
+                Scanning Patterns:
+                
+                    Sequential port scanning
+                    Distributed scanning
+                    Service enumeration
+                    Vulnerability probing
+                    
+                
+                Response Actions:
+                
+                    IP blocking
+                    Asset hardening
+                    Exposure analysis
+                    Security control review
+                    Encryption & Protocol Threats
 
-Sequential port scanning
-Distributed scanning
-Service enumeration
-Vulnerability probing
-
-
-Response Actions:
-
-IP blocking
-Asset hardening
-Exposure analysis
-Security control review
-
-
-
-Encryption & Protocol Threats
 13. TLS Traffic to Bad Domains
 
-Severity: High
-Context: Encrypted traffic to malicious domains
-Analysis Points:
+                Severity: High
+                Context: Encrypted traffic to malicious domains
+               
+                Analysis Points:
+                
+                        Certificate analysis
+                        TLS version monitoring
+                        Cipher suite analysis
+                        JA3 fingerprinting
+                
+                
+                Response Actions:
+                
+                        Traffic blocking
+                        Certificate analysis
+                        Domain reputation check
+                        SSL/TLS inspection
+                        Advanced Threat Categories
 
-Certificate analysis
-TLS version monitoring
-Cipher suite analysis
-JA3 fingerprinting
-
-
-Response Actions:
-
-Traffic blocking
-Certificate analysis
-Domain reputation check
-SSL/TLS inspection
-
-
-
-Advanced Threat Categories
 14. Gradient 365 Alert: Blacklisted IP Sign-in
 
-Severity: Critical
-Context: Microsoft 365 access from known bad IPs
-Enhanced Monitoring:
-
-Account privilege level
-Access pattern analysis
-Resource access tracking
-Authentication method analysis
-
-
-Response Actions:
-
-Immediate account security review
-Access termination
-User notification
-Security policy review
+                Severity: Critical
+                Context: Microsoft 365 access from known bad IPs
+                
+                Enhanced Monitoring:
+                
+                        Account privilege level
+                        Access pattern analysis
+                        Resource access tracking
+                        Authentication method analysis
+                
+                Response Actions:
+                
+                        Immediate account security review
+                        Access termination
+                        User notification
+                        Security policy review
 
 
 
 15. Social Engineering
 
-Severity: High
-Context: Social engineering threat detection
-Attack Vectors:
-
-Phishing attempts
-Impersonation attacks
-Pretexting scenarios
-Business email compromise
-
-
-Response Actions:
-
-User awareness training
-Communication pattern analysis
-Security awareness campaigns
-Policy enforcement review
-
+                Severity: High
+                Context: Social engineering threat detection
+               
+                Attack Vectors:
+                
+                        Phishing attempts
+                        Impersonation attacks
+                        Pretexting scenarios
+                        Business email compromise
+                        
+                
+                Response Actions:
+                
+                        User awareness training
+                        Communication pattern analysis
+                        Security awareness campaigns
+                        Policy enforcement review
 
 
 16. Tor IP
 
-Severity: High
-Context: Tor network node traffic
-Analysis Factors:
-
-Node type (exit, relay, bridge)
-Traffic patterns
-Associated activities
-Policy compliance
-
-
-Response Actions:
-
-Traffic blocking/monitoring
-User investigation
-Policy review
-Security control assessment
-
-
+                Severity: High
+                Context: Tor network node traffic
+                
+                Analysis Factors:
+                
+                        Node type (exit, relay, bridge)
+                        Traffic patterns
+                        Associated activities
+                        Policy compliance
+                
+                Response Actions:
+                
+                        Traffic blocking/monitoring
+                        User investigation
+                        Policy review
+                        Security control assessment
 
 17. Spam IP
 
-Severity: Medium
-Context: Known spam source traffic
-Spam Categories:
-
-Email spam
-Web spam
-Comment spam
-Marketing abuse
-
-
-Response Actions:
-
-IP blocking
-Content filtering
-Rate limiting
-Reputation monitoring
-
-
+                Severity: Medium
+                Context: Known spam source traffic
+                
+                Spam Categories:
+                
+                        Email spam
+                        Web spam
+                        Comment spam
+                        Marketing abuse
+                
+                
+                Response Actions:
+                
+                        IP blocking
+                        Content filtering
+                        Rate limiting
+                        Reputation monitoring
 
 18. NTP TOR IP
 
-Severity: Medium to High
-Context: NTP requests via Tor
-Detection Parameters:
-
-NTP request patterns
-Tor exit node verification
-Time synchronization analysis
-Protocol abuse patterns
-
-
-Response Actions:
-
-Traffic analysis
-NTP configuration review
-Time source validation
-Network policy review
-
-
+                Severity: Medium to High
+                Context: NTP requests via Tor
+                
+                Detection Parameters:
+                
+                        NTP request patterns
+                        Tor exit node verification
+                        Time synchronization analysis
+                        Protocol abuse patterns
+                
+                
+                Response Actions:
+                
+                        Traffic analysis
+                        NTP configuration review
+                        Time source validation
+                        Network policy review
 
 19. Malware IP
 
-Severity: Critical
-Context: Known malware-associated IP traffic
-
-Malware Categories:
-
-Command & Control
-Distribution points
-Bot networks
-Ransomware infrastructure
-
-Response Actions:
-
-Immediate blocking
-System isolation
-Malware analysis
-Incident response initiation
+                Severity: Critical
+                Context: Known malware-associated IP traffic
+                
+                Malware Categories:
+                
+                        Command & Control
+                        Distribution points
+                        Bot networks
+                        Ransomware infrastructure
+                
+                Response Actions:
+                
+                        Immediate blocking
+                        System isolation
+                        Malware analysis
+                        Incident response initiation
 
 
 If none of the templates match well with the alert summary, return exactly "Unknown Template".
