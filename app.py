@@ -1759,31 +1759,60 @@ Important: Double check your response:
            return "Unknown Template"
 
    def is_general_query(self, query: str) -> bool:
-    """Determine if a query is general or specific using LLM"""
-    # Extract only the content part of the query
+    """Determine if a query falls under Phase 1 (general) or requires manual review"""
     metadata = self.extract_client_metadata(query)
     query_content = metadata["content"]
     
-    query_analysis_prompt = f"""
-    Analyze if this query is general or specific to customer logs/systems:
-    Query: {query_content}
+    phase_analysis_prompt = f"""
+    Analyze this query against these phase conditions:
 
-    Guide:
-    - General queries ask about understanding alerts, security concepts, or general procedures
-    - Specific queries reference customer data, specific systems, or require log analysis
-    
+    Phase 1 (Automated Response):
+    - General information requests
+    - Best practices questions
+    - Mitigation strategies
+    - General recommendations
+    - Security guidance
     Examples:
-    General: "What does this alert mean?", "Not sure I understand what you are trying to tell me?"
-    Specific: "Why did we see this traffic spike yesterday?"
+    - "How can we mitigate this?"
+    - "What are the best practices?"
+    - "What would you recommend?"
+    - "Need best practice NTP on this one"
+    - "What's the best mitigation approach?"
 
-    Return only 'general' or 'specific'.
+    Phase 2 (Manual Review - Filter Creation):
+    - Requests to create filters
+    - Requests to exclude specific traffic
+    - Whitelist requests
+    - IP range filtering requests
+    Examples:
+    - "Please filter out this SSH traffic"
+    - "Please do not alarm on this traffic"
+    - "Add these IPs to whitelist"
+
+    Phase 3 (Manual Review - Data Analysis):
+    - Questions about specific customer data
+    - Requests for traffic analysis
+    - IP/Device identification requests
+    - Pattern analysis requests
+    Examples:
+    - "Can you investigate these sign-in attempts?"
+    - "What's the source IP for this traffic?"
+    - "Can you explain these traffic spikes?"
+    - "Which device has this IP?"
+
+    Query to analyze: {query_content}
+
+    Return exactly one of:
+    - "phase1" - For general queries that can be automated
+    - "phase2" - For filter creation requests
+    - "phase3" - For specific data analysis requests
     """
 
     try:
-        response = self.llm.predict(query_analysis_prompt)
-        return response.strip().lower() == "general"
+        response = self.llm.predict(phase_analysis_prompt).strip().lower()
+        return response == "phase1"  # Only Phase 1 queries are considered general
     except Exception as e:
-        logger.error(f"Error in query classification: {str(e)}")
+        logger.error(f"Error in phase classification: {str(e)}")
         return False
 
    def is_acknowledgment(self, query: str) -> bool:
@@ -1904,19 +1933,22 @@ Important: Double check your response:
    def generate_analysis(self, template_name: str, template_details: Dict, 
                          alert_summary: str, client_query: Optional[str], 
                          is_general: bool) -> Dict:
-        """Generate analysis based on query type"""
+        """Generate analysis based on query phase"""
         metadata = self.extract_client_metadata(client_query) if client_query else {
             "name": None,
             "timestamp": None,
             "content": client_query or ""
         }
         
-        # Check if it's an acknowledgment
-        if self.is_acknowledgment(metadata["content"]):
-            greeting = f"Hey {metadata['name']}" if metadata['name'] else "Hey"
-            response = f"{greeting}, thank you for letting us know. We've noted your response. - Gradient Cyber Team"
-        else:
-            # Original analysis logic for questions
+        # Determine the phase
+        phase_result = self.llm.predict(f"""
+        Analyze this query and determine its phase based on the previous criteria:
+        Query: {metadata['content']}
+        Return only the phase number (1, 2, or 3).
+        """).strip()
+        
+        if phase_result == "1":
+            # Generate response for Phase 1 queries
             system_prompt = SystemMessagePromptTemplate.from_template(
                 """You are a senior security analyst providing clear, accurate and concise responses.
                 Rules:
@@ -1955,14 +1987,36 @@ Important: Double check your response:
                 query=metadata["content"]
             )
 
-        return {
-            "template": template_name,
-            "template_details": template_details,
-            "analysis": response.strip(),
-            "is_general_query": is_general,
-            "requires_manual_review": not is_general,
-            "template_json": json.dumps(template_details, indent=2)
-        }
+            return {
+                "template": template_name,
+                "template_details": template_details,
+                "analysis": response.strip(),
+                "is_general_query": is_general,
+                "requires_manual_review": not is_general,
+                "template_json": json.dumps(template_details, indent=2),
+                "phase": "1"
+            }
+            
+        elif phase_result == "2":
+            return {
+                "template": template_name,
+                "template_details": template_details,
+                "analysis": "This query requires manual review for filter creation (Phase 2). A security analyst will review and create appropriate filters based on your requirements.",
+                "is_general_query": False,
+                "requires_manual_review": True,
+                "template_json": json.dumps(template_details, indent=2),
+                "phase": "2"
+            }
+        else:  # Phase 3
+            return {
+                "template": template_name,
+                "template_details": template_details,
+                "analysis": "This query requires manual review for detailed data analysis (Phase 3). A security analyst will analyze your specific data and provide a detailed response.",
+                "is_general_query": False,
+                "requires_manual_review": True,
+                "template_json": json.dumps(template_details, indent=2),
+                "phase": "3"
+            }
 
 def main():
    st.set_page_config(page_title="Sitrep Analyzer", layout="wide")
