@@ -1285,8 +1285,8 @@ class SitrepAnalyzer:
    def __init__(self):
        # Only use environment variable for API key
        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+       if not self.openai_api_key:
            raise ValueError("OpenAI API key not found in environment variables. Please set OPENAI_API_KEY.")
-           
        openai.api_key = self.openai_api_key
        self.llm = ChatOpenAI(
            model_name="gpt-4o-mini",
