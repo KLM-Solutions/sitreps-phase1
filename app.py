@@ -1744,26 +1744,7 @@ Network policy review
 
 
 
-19. Malware IP
-
-Severity: Critical
-Context: Known malware-associated IP traffic
-
-Malware Categories:
-
-Command & Control
-Distribution points
-Bot networks
-Ransomware infrastructure
-
-Response Actions:
-
-Immediate blocking
-System isolation
-Malware analysis
-Incident response initiation
-
-20. Sentinel Threat Alert
+19. Sentinel Threat Alert
 
 Severity: Medium
 Context: An alert triggered by Sentinel indicating potential threat activity.
@@ -1774,6 +1755,7 @@ Unauthorized access attempts
 Malware detection
 Suspicious process executions
 Network anomalies
+
 Response Actions:
 
 Device scanning for unwanted software
@@ -1781,6 +1763,8 @@ User and system activity review
 Threat intelligence lookup
 Quarantine affected systems
 Incident response team notification
+
+
 
 If none of the templates match well with the alert summary, return exactly "Unknown Template".
     Otherwise, return only the exact name of the best matching template.
