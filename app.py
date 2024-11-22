@@ -1,4 +1,5 @@
 import streamlit as st
+from langchain.callbacks import get_openai_callback
 from langchain.chat_models import ChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings 
 from langchain.chains import LLMChain
