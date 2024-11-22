@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 LANGCHAIN_TRACING_V2="true"
 LANGCHAIN_ENDPOINT="https://api.smith.langchain.com"
 LANGCHAIN_API_KEY=os.getenv("LANGCHAIN")
-LANGCHAIN_PROJECT="Sitrepautomation"
+LANGCHAIN_PROJECT="Sitrep-automation"
 
 # Your existing SITREP_TEMPLATES_DETAILED dictionary
 SITREP_TEMPLATES_DETAILED = {
