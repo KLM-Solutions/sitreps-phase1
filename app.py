@@ -13,7 +13,7 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-LANGCHAIN_TRACING_V2=true
+LANGCHAIN_TRACING_V2="true"
 LANGCHAIN_ENDPOINT="https://api.smith.langchain.com"
 LANGCHAIN_API_KEY="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"
 LANGCHAIN_PROJECT="Sitrepautomation"
