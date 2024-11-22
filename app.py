@@ -1711,30 +1711,7 @@ def main():
            st.error("Please enter an alert summary to analyze.")
            return
        
-       with st.spinner("Analyzing security alert..."):
-           result = analyzer.analyze_sitrep(alert_summary, client_query)
-           
-           if "error" in result:
-               st.error(result["error"])
-           else:
-               # Display Token Analysis at the top
-               if "token_usage" in result:
-                   st.markdown("""
-                       <div class="token-box">
-                       <h4>📊 Token Analysis</h4>
-                   """, unsafe_allow_html=True)
-                   
-                   col1, col2, col3, col4 = st.columns(4)
-                   with col1:
-                       st.metric("Total Tokens", f"{result['token_usage']['total_tokens']:,}")
-                   with col2:
-                       st.metric("Prompt Tokens", f"{result['token_usage']['prompt_tokens']:,}")
-                   with col3:
-                       st.metric("Completion Tokens", f"{result['token_usage']['completion_tokens']:,}")
-                   with col4:
-                       st.metric("Cost", result['token_usage']['total_cost'])
-                   
-                   st.markdown("</div>", unsafe_allow_html=True)
+       
 
                st.subheader("Template Match")
                st.json({
@@ -1786,6 +1763,31 @@ def main():
                if show_filter_json and "json_filter" in result:
                    st.subheader("Generated JSON Filter")
                    st.json(result["json_filter"])
+
+    with st.spinner("Analyzing security alert..."):
+           result = analyzer.analyze_sitrep(alert_summary, client_query)
+           
+           if "error" in result:
+               st.error(result["error"])
+           else:
+               # Display Token Analysis at the top
+               if "token_usage" in result:
+                   st.markdown("""
+                       <div class="token-box">
+                       <h4>📊 Token Analysis</h4>
+                   """, unsafe_allow_html=True)
+                   
+                   col1, col2, col3, col4 = st.columns(4)
+                   with col1:
+                       st.metric("Total Tokens", f"{result['token_usage']['total_tokens']:,}")
+                   with col2:
+                       st.metric("Prompt Tokens", f"{result['token_usage']['prompt_tokens']:,}")
+                   with col3:
+                       st.metric("Completion Tokens", f"{result['token_usage']['completion_tokens']:,}")
+                   with col4:
+                       st.metric("Cost", result['token_usage']['total_cost'])
+                   
+                   st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
