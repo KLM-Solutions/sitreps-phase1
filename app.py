@@ -1524,50 +1524,59 @@ Available Templates and their contexts:
 
    def analyze_sitrep(self, alert_summary: str, client_query: Optional[str] = None) -> Dict:
         try:
-            template_name = self.find_matching_template(alert_summary)
-            template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
-            
-            metadata = self.extract_client_metadata(client_query) if client_query else {
-                "name": None,
-                "timestamp": None,
-                "content": ""
-            }
-            
-            is_general = True if not client_query else self.is_general_query(metadata["content"])
-            
-            result = {
-                "template": template_name,
-                "template_details": template_details,
-                "is_general_query": is_general,
-                "requires_manual_review": not is_general,
-                "template_json": json.dumps(template_details, indent=2)
-            }
-            
-            # Add phase identification for manual review cases
-            if not is_general and client_query:
-                result["phase"] = self.identify_phase(metadata["content"])
-            
-            if client_query:
-                json_filter = self.generate_json_path_filter({
+            with get_openai_callback() as cb:
+                template_name = self.find_matching_template(alert_summary)
+                template_details = SITREP_TEMPLATES_DETAILED.get(template_name, {})
+                
+                metadata = self.extract_client_metadata(client_query) if client_query else {
+                    "name": None,
+                    "timestamp": None,
+                    "content": ""
+                }
+                
+                is_general = True if not client_query else self.is_general_query(metadata["content"])
+                
+                result = {
                     "template": template_name,
-                    "alert_summary": alert_summary,
-                    "feedback": metadata["content"]
-                })
-                if json_filter:
-                    result["json_filter"] = json_filter
-            
-            if is_general:
-                analysis_result = self.generate_analysis(
-                    template_name,
-                    template_details,
-                    alert_summary,
-                    client_query,
-                    is_general
-                )
-                result["analysis"] = analysis_result.get("analysis")
-            
-            return result
-
+                    "template_details": template_details,
+                    "is_general_query": is_general,
+                    "requires_manual_review": not is_general,
+                    "template_json": json.dumps(template_details, indent=2)
+                }
+                
+                # Add phase identification for manual review cases
+                if not is_general and client_query:
+                    result["phase"] = self.identify_phase(metadata["content"])
+                
+                if client_query:
+                    json_filter = self.generate_json_path_filter({
+                        "template": template_name,
+                        "alert_summary": alert_summary,
+                        "feedback": metadata["content"]
+                    })
+                    if json_filter:
+                        result["json_filter"] = json_filter
+                
+                if is_general:
+                    analysis_result = self.generate_analysis(
+                        template_name,
+                        template_details,
+                        alert_summary,
+                        client_query,
+                        is_general
+                    )
+                    result["analysis"] = analysis_result.get("analysis")
+                
+                # Add token usage information to result
+                result["token_usage"] = {
+                    "total_tokens": cb.total_tokens,
+                    "prompt_tokens": cb.prompt_tokens,
+                    "completion_tokens": cb.completion_tokens,
+                    "total_cost": f"${cb.total_cost:.4f}"
+                }
+                
+                return result
+        
         except Exception as e:
             logger.error(f"Error in analyze_sitrep: {str(e)}")
             return {"error": str(e)}
@@ -1662,6 +1671,13 @@ def main():
            border-radius: 8px;
            border-left: 5px solid #ffc107;
        }
+       .token-box {
+           background-color: #e9ecef;
+           padding: 15px;
+           border-radius: 8px;
+           border-left: 5px solid #6c757d;
+           margin-bottom: 20px;
+       }
        </style>
    """, unsafe_allow_html=True)
    
@@ -1690,68 +1706,85 @@ def main():
        show_filter_json = st.checkbox("Show Generated Filters", value=True)
    
    if st.button("Analyze Alert", type="primary"):
-    if not alert_summary:
-        st.error("Please enter an alert summary to analyze.")
-        return
-    
-    with st.spinner("Analyzing security alert..."):
-        result = analyzer.analyze_sitrep(alert_summary, client_query)
-        
-        if "error" in result:
-            st.error(result["error"])
-        else:
-            st.subheader("Template Match")
-            st.json({
-                "Template": result["template"],
-            })
-            
-            if show_template_json:
-                st.subheader("Template JSON")
-                st.markdown(f"""
-                    <div class="json-box">
-                    {result["template_json"]}
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            if show_filter_json and "json_filter" in result:
-                st.subheader("Generated JSON Filter")
-                st.json(result["json_filter"])
-            
-            if result.get("requires_manual_review"):
-                st.markdown("""
-                    <div class="manual-review-box">
-                    <h4>👥 Manual Review Required</h4>
-                    <p>This query requires specific analysis of customer logs or systems.</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                # Add this new section for phase identification
-                if "phase" in result:
-                    st.markdown(f"""
-                        <div class="manual-review-box">
-                        <h4>Query Classification</h4>
-                        <p>{result["phase"]}: {
-                            "Request for traffic filtering/exclusion" if result["phase"] == "Phase 2"
-                            else "Request for specific data analysis/insights"
-                        }</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-            else:
-                # Add the Automated Processing section here
-                st.markdown("""
-                    <div class="automation-box">
-                    <h4>🤖 Automated Processing</h4>
-                    <p>Phase 1: This query has been identified as a general inquiry and can be handled automatically using template matching and standardized responses.</p>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            if "analysis" in result:
-                st.subheader("Analysis")
-                st.markdown(result["analysis"])
-            
-            if show_filter_json and "json_filter" in result:
-                st.subheader("Generated JSON Filter")
-                st.json(result["json_filter"])
+       if not alert_summary:
+           st.error("Please enter an alert summary to analyze.")
+           return
+       
+       with st.spinner("Analyzing security alert..."):
+           result = analyzer.analyze_sitrep(alert_summary, client_query)
+           
+           if "error" in result:
+               st.error(result["error"])
+           else:
+               # Display Token Analysis at the top
+               if "token_usage" in result:
+                   st.markdown("""
+                       <div class="token-box">
+                       <h4>📊 Token Analysis</h4>
+                   """, unsafe_allow_html=True)
+                   
+                   col1, col2, col3, col4 = st.columns(4)
+                   with col1:
+                       st.metric("Total Tokens", f"{result['token_usage']['total_tokens']:,}")
+                   with col2:
+                       st.metric("Prompt Tokens", f"{result['token_usage']['prompt_tokens']:,}")
+                   with col3:
+                       st.metric("Completion Tokens", f"{result['token_usage']['completion_tokens']:,}")
+                   with col4:
+                       st.metric("Cost", result['token_usage']['total_cost'])
+                   
+                   st.markdown("</div>", unsafe_allow_html=True)
+
+               st.subheader("Template Match")
+               st.json({
+                   "Template": result["template"],
+               })
+               
+               if show_template_json:
+                   st.subheader("Template JSON")
+                   st.markdown(f"""
+                       <div class="json-box">
+                       {result["template_json"]}
+                       </div>
+                   """, unsafe_allow_html=True)
+               
+               if show_filter_json and "json_filter" in result:
+                   st.subheader("Generated JSON Filter")
+                   st.json(result["json_filter"])
+               
+               if result.get("requires_manual_review"):
+                   st.markdown("""
+                       <div class="manual-review-box">
+                       <h4>👥 Manual Review Required</h4>
+                       <p>This query requires specific analysis of customer logs or systems.</p>
+                       </div>
+                   """, unsafe_allow_html=True)
+                   
+                   if "phase" in result:
+                       st.markdown(f"""
+                           <div class="manual-review-box">
+                           <h4>Query Classification</h4>
+                           <p>{result["phase"]}: {
+                               "Request for traffic filtering/exclusion" if result["phase"] == "Phase 2"
+                               else "Request for specific data analysis/insights"
+                           }</p>
+                           </div>
+                       """, unsafe_allow_html=True)
+               else:
+                   st.markdown("""
+                       <div class="automation-box">
+                       <h4>🤖 Automated Processing</h4>
+                       <p>Phase 1: This query has been identified as a general inquiry and can be handled automatically using template matching and standardized responses.</p>
+                       </div>
+                   """, unsafe_allow_html=True)
+               
+               if "analysis" in result:
+                   st.subheader("Analysis")
+                   st.markdown(result["analysis"])
+               
+               if show_filter_json and "json_filter" in result:
+                   st.subheader("Generated JSON Filter")
+                   st.json(result["json_filter"])
 
 if __name__ == "__main__":
     main()
