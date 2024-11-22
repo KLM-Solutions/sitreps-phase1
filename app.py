@@ -1673,11 +1673,19 @@ def main():
            border-left: 5px solid #ffc107;
        }
        .token-box {
-           background-color: #e9ecef;
-           padding: 15px;
-           border-radius: 8px;
-           border-left: 5px solid #6c757d;
-           margin-bottom: 20px;
+           background-color: #f8f9fa;
+           padding: 10px;
+           border-radius: 4px;
+           margin-top: 20px;
+           font-size: 0.8em;
+       }
+       .token-title {
+           font-size: 0.9em;
+           color: #666;
+           margin-bottom: 8px;
+       }
+       .token-metric {
+           font-size: 0.8em !important;
        }
        </style>
    """, unsafe_allow_html=True)
@@ -1710,32 +1718,13 @@ def main():
        if not alert_summary:
            st.error("Please enter an alert summary to analyze.")
            return
+       
        with st.spinner("Analyzing security alert..."):
            result = analyzer.analyze_sitrep(alert_summary, client_query)
            
            if "error" in result:
                st.error(result["error"])
            else:
-               # Display Token Analysis at the top
-               if "token_usage" in result:
-                   st.markdown("""
-                       <div class="token-box">
-                       <h4>📊 Token Analysis</h4>
-                   """, unsafe_allow_html=True)
-                   
-                   col1, col2, col3, col4 = st.columns(4)
-                   with col1:
-                       st.metric("Total Tokens", f"{result['token_usage']['total_tokens']:,}")
-                   with col2:
-                       st.metric("Prompt Tokens", f"{result['token_usage']['prompt_tokens']:,}")
-                   with col3:
-                       st.metric("Completion Tokens", f"{result['token_usage']['completion_tokens']:,}")
-                   with col4:
-                       st.metric("Cost", result['token_usage']['total_cost'])
-                   
-                   st.markdown("</div>", unsafe_allow_html=True)
-       
-
                st.subheader("Template Match")
                st.json({
                    "Template": result["template"],
@@ -1786,6 +1775,23 @@ def main():
                if show_filter_json and "json_filter" in result:
                    st.subheader("Generated JSON Filter")
                    st.json(result["json_filter"])
+               
+               # Token Analysis at the bottom with smaller font
+               if "token_usage" in result:
+                   st.markdown("<div class='token-box'>", unsafe_allow_html=True)
+                   st.markdown("<p class='token-title'>📊 Token Analysis</p>", unsafe_allow_html=True)
+                   
+                   cols = st.columns(4)
+                   with cols[0]:
+                       st.markdown(f"<div class='token-metric'>Total Tokens<br><b>{result['token_usage']['total_tokens']:,}</b></div>", unsafe_allow_html=True)
+                   with cols[1]:
+                       st.markdown(f"<div class='token-metric'>Prompt Tokens<br><b>{result['token_usage']['prompt_tokens']:,}</b></div>", unsafe_allow_html=True)
+                   with cols[2]:
+                       st.markdown(f"<div class='token-metric'>Completion Tokens<br><b>{result['token_usage']['completion_tokens']:,}</b></div>", unsafe_allow_html=True)
+                   with cols[3]:
+                       st.markdown(f"<div class='token-metric'>Cost<br><b>{result['token_usage']['total_cost']}</b></div>", unsafe_allow_html=True)
+                   
+                   st.markdown("</div>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
